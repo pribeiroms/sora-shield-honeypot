@@ -1,0 +1,16 @@
+honeypot:
+  ports: [21, 22, 23, 80, 3306]
+  bind_address: "0.0.0.0"
+
+capture:
+  interface: "eth0"
+  save_pcap: false
+
+firewall:
+  enabled: false        # deixem false até testar em ambiente controlado
+  max_attempts: 5
+  block_duration_minutes: 60
+  whitelist: ["127.0.0.1"]
+
+logging:
+  file: "logs/events.log"
