@@ -25,7 +25,8 @@ A ideia é simples: nenhum usuário legítimo tem motivo para se conectar a essa
 - [PyYAML](https://pyyaml.org/): leitura das configurações
 - [python-dotenv](https://pypi.org/project/python-dotenv/): variáveis de ambiente
 - [pytest](https://pytest.org/): testes
-- iptables / nftables: bloqueio no firewall (Linux)
+- [Npcap](https://npcap.com/): driver de captura de pacotes (Windows)
+- Firewall do Windows (`netsh advfirewall`) ou iptables (Linux): bloqueio de IPs
 
 ---
 
@@ -58,40 +59,72 @@ sora-shield-honeypot/
 ### Pré-requisitos
 
 - Python 3.10 ou superior
-- Linux (recomendado, por causa da captura de pacotes e do firewall)
-- Permissão de root para captura de pacotes e alteração de regras de firewall
+- Windows 10/11 ou Linux
+- **Windows:** [Npcap](https://npcap.com/) instalado (marque a opção *WinPcap API-compatible mode* na instalação), necessário para o Scapy capturar pacotes
+- **Linux:** iptables disponível
+- Privilégios de administrador (Windows) ou root (Linux) para captura de pacotes e alteração de regras de firewall
 
 ### Instalação
 
+Clone o repositório (substitua `<usuario>` pelo usuário dono do repositório ou do seu fork):
+
 ```bash
-# Clone o repositório (substitua <usuario> pelo usuário dono do repositório ou do seu fork)
 git clone https://github.com/<usuario>/sora-shield-honeypot.git
 cd sora-shield-honeypot
+```
 
-# (Opcional) Crie um ambiente virtual
+Crie e ative um ambiente virtual (opcional, mas recomendado) e instale as dependências:
+
+**Windows (PowerShell)**
+
+```powershell
 python -m venv .venv
-source .venv/bin/activate
-
-# Instale as dependências
+.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
+copy .env.example .env
+```
 
-# Crie seu arquivo de variáveis de ambiente
+**Linux**
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
 cp .env.example .env
 ```
 
+### Interface de rede
+
+Antes de executar, ajuste o campo `capture.interface` em `config/settings.yaml` com o nome da sua interface:
+
+- **Windows:** normalmente `Ethernet` ou `Wi-Fi`. Para listar as interfaces, rode `python -c "from scapy.all import show_interfaces; show_interfaces()"`
+- **Linux:** normalmente `eth0`, `enp0s3` ou `wlan0`. Para listar, rode `ip a`
+
 ### Execução
 
-```bash
-PYTHONPATH=src python -m sora_shield
+A captura de pacotes e o bloqueio no firewall exigem privilégios elevados.
+
+**Windows:** abra o PowerShell **como administrador** (clique com o botão direito em *Windows PowerShell* > *Executar como administrador*), entre na pasta do projeto e rode:
+
+```powershell
+$env:PYTHONPATH = "src"
+python -m sora_shield
 ```
 
-### Executando como administrador
-
-A captura de pacotes e o bloqueio no firewall exigem privilégios de root. Para usar essas funcionalidades:
+**Linux:**
 
 ```bash
-sudo PYTHONPATH=src python -m sora_shield
+sudo PYTHONPATH=src .venv/bin/python -m sora_shield
 ```
+
+> No Linux, o `sudo` não usa o ambiente virtual ativado, por isso o comando aponta direto para o Python do `.venv`. Se não estiver usando ambiente virtual, troque por `python3`.
+
+### Como o bloqueio funciona em cada sistema
+
+| Sistema | Ferramenta | Exemplo de regra criada |
+|---|---|---|
+| Windows | `netsh advfirewall` | `netsh advfirewall firewall add rule name="SoraShield_<ip>" dir=in action=block remoteip=<ip>` |
+| Linux | `iptables` | `iptables -A INPUT -s <ip> -j DROP` |
 
 ---
 
@@ -104,7 +137,7 @@ As configurações ficam em `config/settings.yaml`:
 | `honeypot` | `ports` | Lista de portas isca |
 | `honeypot` | `bind_address` | Endereço em que os listeners escutam |
 | `honeypot` | `connection_timeout_seconds` | Tempo máximo, em segundos, que uma conexão fica aberta |
-| `capture` | `interface` | Interface de rede monitorada |
+| `capture` | `interface` | Interface de rede monitorada (ex.: `Ethernet` no Windows, `eth0` no Linux) |
 | `capture` | `save_pcap` | Salvar os pacotes capturados em arquivo `.pcap` |
 | `firewall` | `enabled` | Ativa ou desativa o bloqueio real |
 | `firewall` | `max_attempts` | Tentativas antes de bloquear um IP |
@@ -117,6 +150,15 @@ As configurações ficam em `config/settings.yaml`:
 ---
 
 ## Testes
+
+**Windows (PowerShell)**
+
+```powershell
+$env:PYTHONPATH = "src"
+pytest
+```
+
+**Linux**
 
 ```bash
 PYTHONPATH=src pytest
