@@ -64,7 +64,7 @@ sora-shield-honeypot/
 ### Instalação
 
 ```bash
-# Clone o repositório
+# Clone o repositório (substitua <usuario> pelo usuário dono do repositório ou do seu fork)
 git clone https://github.com/<usuario>/sora-shield-honeypot.git
 cd sora-shield-honeypot
 
@@ -85,7 +85,9 @@ cp .env.example .env
 PYTHONPATH=src python -m sora_shield
 ```
 
-Para funcionalidades que exigem privilégios (captura e firewall):
+### Executando como administrador
+
+A captura de pacotes e o bloqueio no firewall exigem privilégios de root. Para usar essas funcionalidades:
 
 ```bash
 sudo PYTHONPATH=src python -m sora_shield
@@ -101,6 +103,7 @@ As configurações ficam em `config/settings.yaml`:
 |---|---|---|
 | `honeypot` | `ports` | Lista de portas isca |
 | `honeypot` | `bind_address` | Endereço em que os listeners escutam |
+| `honeypot` | `connection_timeout_seconds` | Tempo máximo, em segundos, que uma conexão fica aberta |
 | `capture` | `interface` | Interface de rede monitorada |
 | `capture` | `save_pcap` | Salvar os pacotes capturados em arquivo `.pcap` |
 | `firewall` | `enabled` | Ativa ou desativa o bloqueio real |
