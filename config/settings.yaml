@@ -1,5 +1,5 @@
 honeypot:
-  ports: [21, 22, 23, 80, 3306]          # portas isca
+  ports: [21, 23, 3389]                  # portas isca: FTP, Telnet, RDP
   bind_address: "0.0.0.0"
   connection_timeout_seconds: 10         # tempo máximo de uma conexão aberta
 
