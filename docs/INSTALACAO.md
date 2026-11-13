@@ -1,7 +1,12 @@
 # Instalação e configuração do ambiente — Sora Shield
 
 Guia para montar o ambiente de desenvolvimento e testes numa máquina nova.
-Para repetir os testes num ambiente já montado, veja `ROTEIRO_TESTES.md`.
+Para repetir os testes num ambiente já montado, veja
+[ROTEIRO_TESTES.md](ROTEIRO_TESTES.md).
+
+> **Cole um comando por vez.** Várias linhas coladas de uma só vez no
+> PowerShell viram um comando único, e ele falha com erro de parâmetro
+> ou de token inesperado.
 
 ## Por que duas máquinas
 
@@ -14,10 +19,23 @@ efeito. O mesmo vale para o próprio IP de rede da máquina — quando origem e
 destino são o mesmo host, o Windows encurta o caminho internamente e o
 pacote nem chega à placa de rede.
 
-Isso foi medido: com o honeypot e o atacante na mesma máquina, a conexão
-passa mesmo com a regra de bloqueio ativa. Com o atacante numa VM em modo
-bridge, com IP próprio na rede, a conexão toma `Operation timed out`, que
-é o comportamento que o projeto precisa demonstrar.
+Isso foi medido. Com o honeypot e o atacante na mesma máquina, a conexão
+passa mesmo com a regra de bloqueio ativa:
+
+```
+Test-NetConnection 127.0.0.1 -Port 2323    ->  True
+netsh advfirewall firewall add rule ... remoteip=127.0.0.1
+Test-NetConnection 127.0.0.1 -Port 2323    ->  True   (ainda passa)
+```
+
+Com o atacante numa VM em modo bridge, com IP próprio na rede, a mesma
+regra funciona:
+
+```
+telnet <honeypot> 23   ->  Connected
+netsh advfirewall firewall add rule ... remoteip=<ip-da-vm>
+telnet <honeypot> 23   ->  Operation timed out
+```
 
 Quem tem só um computador resolve isso com uma máquina virtual, como
 descrito na Parte 2.
@@ -33,10 +51,9 @@ Se a máquina for **Windows Pro ou Enterprise**, confira se a porta 3389
 está livre antes de começar — essas edições têm servidor de RDP, que ocupa
 essa porta. No Windows Home ela está sempre livre.
 
-    foreach ($p in 21,23,3389) {
-      $busy = Get-NetTCPConnection -LocalPort $p -State Listen -ErrorAction SilentlyContinue
-      if ($busy) { "porta $p -> OCUPADA" } else { "porta $p -> livre" }
-    }
+```powershell
+foreach ($p in 21,23,3389) { $busy = Get-NetTCPConnection -LocalPort $p -State Listen -ErrorAction SilentlyContinue; if ($busy) { "porta $p -> OCUPADA" } else { "porta $p -> livre" } }
+```
 
 Se a 3389 aparecer ocupada, desative a Área de Trabalho Remota em
 Configurações → Sistema → Área de Trabalho Remota.
@@ -47,16 +64,21 @@ Configurações → Sistema → Área de Trabalho Remota.
 
 ## 1. Python
 
-    choco install python313 -y
+```powershell
+choco install python313 -y
+```
 
 Feche e reabra o terminal, depois confirme:
 
-    python --version
+```powershell
+python --version
+```
 
-**Não use a versão mais recente do Python.** Pacotes com partes em C, como o
-PyYAML, levam semanas ou meses para publicar versões compiladas para um
-Python recém-lançado. Sem elas o pip tenta compilar na hora e falha pedindo
-o Microsoft Visual C++ Build Tools. O projeto foi testado na **3.13**.
+**Não use a versão mais recente do Python.** Pacotes com partes escritas em
+C, como o PyYAML, levam semanas ou meses para publicar versões compiladas
+para um Python recém-lançado. Sem elas o pip tenta compilar na hora e falha
+pedindo o Microsoft Visual C++ Build Tools. O projeto foi testado na
+**3.13**.
 
 **Não instale pela Microsoft Store.** Aquela versão roda num sandbox que
 atrapalha o acesso a drivers de rede, e o Scapy precisa desse acesso.
@@ -68,24 +90,29 @@ Baixe o instalador em [npcap.com](https://npcap.com) — o item
 
 Na tela de opções:
 
-- ✅ **Install Npcap in WinPcap API-compatible Mode** — é a API que o Scapy usa
-- ❌ **Support raw 802.11 traffic (and monitor mode)** — deixe desmarcado. Em
+- **Install Npcap in WinPcap API-compatible Mode** — marcar. É a API que o
+  Scapy usa.
+- **Support raw 802.11 traffic (and monitor mode)** — deixar desmarcado. Em
   modo monitor a placa Wi-Fi entrega quadros 802.11 crus em vez de quadros
   tipo Ethernet, o sniffer não acha cabeçalhos IP nem TCP, e a máquina
   costuma perder a conexão com a rede.
-- ❌ **Restrict Npcap driver's access to Administrators only** — desnecessário
+- **Restrict Npcap driver's access to Administrators only** — desnecessário.
 
 ## 3. Wireshark
 
-    choco install wireshark -y
+```powershell
+choco install wireshark -y
+```
 
 Usado para validar a captura do sniffer, conforme a issue #5.
 
 ## 4. VirtualBox
 
-    choco install virtualbox -y
+```powershell
+choco install virtualbox -y
+```
 
-Só é necessário em quem for rodar a máquina atacante virtualizada.
+Só é necessário para quem for rodar a máquina atacante virtualizada.
 
 ## 5. O projeto
 
@@ -94,29 +121,37 @@ Esses serviços sincronizam a pasta `.git/` sem entender que aqueles arquivos
 precisam ser escritos de forma atômica, e geram arquivos de conflito que
 quebram o repositório.
 
-    cd C:\Users\<voce>\projetos
-    git clone https://github.com/pribeiroms/sora-shield-honeypot.git
-    cd sora-shield-honeypot
+```powershell
+cd C:\Users\<voce>\projetos
+git clone https://github.com/pribeiroms/sora-shield-honeypot.git
+cd sora-shield-honeypot
+```
 
 Ambiente virtual e dependências:
 
-    py -3.13 -m venv .venv
-    .venv\Scripts\Activate.ps1
-    python --version
-    pip install -r requirements.txt
+```powershell
+py -3.13 -m venv .venv
+.venv\Scripts\Activate.ps1
+python --version
+pip install -r requirements.txt
+```
 
 Confira que o `python --version` mostra **3.13** antes de instalar. Se o
 `Activate.ps1` for barrado pela política de execução:
 
-    Set-ExecutionPolicy -Scope Process -ExecutionPolicy RemoteSigned
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy RemoteSigned
+```
 
 ## 6. Descobrir o nome da interface de rede
 
 O campo `capture.interface` do `config/settings.yaml` muda de máquina para
 máquina. Descubra o nome da sua:
 
-    .venv\Scripts\Activate.ps1
-    python -c "from scapy.all import show_interfaces; show_interfaces()"
+```powershell
+.venv\Scripts\Activate.ps1
+python -c "from scapy.all import show_interfaces; show_interfaces()"
+```
 
 Esse comando tem função dupla: mostra o nome da interface **e** prova que o
 Npcap instalou corretamente. Se a lista vier vazia ou der erro de
@@ -125,9 +160,11 @@ Npcap instalou corretamente. Se a lista vier vazia ou der erro de
 O Scapy exibe a descrição longa do adaptador, mas aceita o nome curto do
 Windows (`Wi-Fi`, `Ethernet`). Para descobrir o nome curto:
 
-    Get-NetIPAddress -AddressFamily IPv4 |
-      Where-Object { $_.IPAddress -ne '127.0.0.1' } |
-      Select-Object InterfaceAlias, IPAddress
+```powershell
+Get-NetIPAddress -AddressFamily IPv4 |
+  Where-Object { $_.IPAddress -ne '127.0.0.1' } |
+  Select-Object InterfaceAlias, IPAddress
+```
 
 Ajuste o `capture.interface` no `settings.yaml` com esse valor.
 
@@ -139,16 +176,19 @@ entrar, e o sniffer pode ficar escutando a placa errada.
 
 PowerShell **como administrador**:
 
-    New-NetFirewallRule -DisplayName "SoraShield_iscas" -Direction Inbound `
-      -Protocol TCP -LocalPort 21,23,3389 -Action Allow
+```powershell
+New-NetFirewallRule -DisplayName "SoraShield_iscas" -Direction Inbound -Protocol TCP -LocalPort 21,23,3389 -Action Allow
+```
 
 Sem essa regra o Windows barra as conexões vindas da máquina atacante, e é
 fácil confundir isso com bug no código.
 
 ## 8. Verificar
 
-    $env:PYTHONPATH = "src"
-    python -m sora_shield
+```powershell
+$env:PYTHONPATH = "src"
+python -m sora_shield
+```
 
 Deve imprimir as portas isca lidas do `settings.yaml`.
 
@@ -159,7 +199,9 @@ Deve imprimir as portas isca lidas do `settings.yaml`.
 Pule esta parte se você tiver um segundo computador físico na mesma rede.
 Nesse caso basta ativar o cliente Telnet nele:
 
-    Enable-WindowsOptionalFeature -Online -FeatureName TelnetClient
+```powershell
+Enable-WindowsOptionalFeature -Online -FeatureName TelnetClient
+```
 
 ## 1. Baixar o Alpine Linux
 
@@ -185,9 +227,8 @@ No VirtualBox, **Novo**:
 | Disco | 2 a 8 GB |
 | Use EFI | desmarcado |
 
-A opção de instalação automática precisa ficar desmarcada: o VirtualBox não
-sabe instalar o Alpine sozinho e a VM nem chega a bootar se você deixar
-marcada.
+A instalação automática precisa ficar desmarcada: o VirtualBox não sabe
+instalar o Alpine sozinho.
 
 ## 3. Configurar a rede em bridge
 
@@ -205,7 +246,9 @@ e o problema do loopback volta.
 
 Ligue a VM, entre como `root` (sem senha) e rode:
 
-    setup-alpine
+```sh
+setup-alpine
+```
 
 Atenção ao hífen: é `setup-alpine`, não `setup alpine`.
 
@@ -230,15 +273,17 @@ Respostas:
 | Erase the disk and continue | `y` |
 
 O modo `sys` instala no disco de forma permanente. Em outros modos o Alpine
-roda da memória e você perde tudo ao desligar.
+roda da memória e perde tudo ao desligar.
 
-A escolha do espelho despeja dezenas de linhas de erro (`404`, `timed out`).
-É só o teste de velocidade batendo em espelhos mundo afora; o que importa é
-o `Added mirror ...` no final.
+A escolha do espelho despeja dezenas de linhas de erro (`404`,
+`timed out`). É só o teste de velocidade batendo em espelhos mundo afora; o
+que importa é o `Added mirror ...` no final.
 
 Ao terminar:
 
-    poweroff
+```sh
+poweroff
+```
 
 Com a VM desligada, remova o ISO em Configurações → Armazenamento → disco
 óptico → Remover disco do drive virtual. Sem isso ela boota do instalador
@@ -246,12 +291,16 @@ de novo. Ligue e entre com a senha definida.
 
 ## 5. Cliente Telnet
 
-    apk update
-    apk add busybox-extras
+```sh
+apk update
+apk add busybox-extras
+```
 
 Confirme que a VM pegou IP na mesma faixa do honeypot:
 
-    ip a
+```sh
+ip a
+```
 
 A `eth0` deve ter um IP da rede local. Se vier `169.254.x`, o bridge não
 funcionou — reveja o passo 3.
@@ -260,20 +309,24 @@ funcionou — reveja o passo 3.
 
 Útil para copiar e colar comandos, que não funciona no console da VM.
 
-    apk add openssh
-    sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config
-    rc-update add sshd default
-    rc-service sshd start
+```sh
+apk add openssh
+sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config
+rc-update add sshd default
+rc-service sshd start
+```
 
 Do notebook:
 
-    ssh root@<IP-DA-VM>
+```powershell
+ssh root@<IP-DA-VM>
+```
 
 ---
 
 # Parte 3 — Validar
 
-Siga o `ROTEIRO_TESTES.md`, a partir da seção 3.
+Siga o [ROTEIRO_TESTES.md](ROTEIRO_TESTES.md), a partir da seção 3.
 
 ---
 
