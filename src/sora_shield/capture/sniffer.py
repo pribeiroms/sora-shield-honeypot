@@ -111,8 +111,13 @@ class Sniffer:
         porta_isca = chave[2]
 
         if flags == "S" and sentido == "entrada":
-            self._em_andamento[chave] = "syn"
-            self._emitir("syn", ip, tcp, porta_isca)
+            # Quando um SYN nao e respondido, o TCP reenvia o mesmo
+            # pacote duas ou tres vezes. Retransmissao nao e tentativa
+            # nova, entao so emite se a conexao ainda nao estiver
+            # registrada.
+            if chave not in self._em_andamento:
+                self._em_andamento[chave] = "syn"
+                self._emitir("syn", ip, tcp, porta_isca)
 
         elif flags == "SA" and sentido == "saida":
             if self._em_andamento.get(chave) == "syn":
