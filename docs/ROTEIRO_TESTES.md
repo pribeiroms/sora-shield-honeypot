@@ -20,7 +20,8 @@ ambiente do zero, veja [INSTALACAO.md](INSTALACAO.md).
 | Npcap | 1.90, em WinPcap API-compatible Mode |
 | Wireshark | 4.6.9 |
 | VirtualBox | 7.2.22 |
-| Interface de captura | `Wi-Fi` |
+| Interface de captura | `VirtualBox Host-Only Ethernet Adapter` |
+| Endereço nessa rede | `192.168.56.1`, fixo |
 
 **Máquina A — atacante** (VM `sora-atacante`)
 
@@ -29,22 +30,29 @@ ambiente do zero, veja [INSTALACAO.md](INSTALACAO.md).
 | Sistema | Alpine Linux 3.24 x86_64, edição virt |
 | Hostname | `atacante` |
 | Usuário | `root` |
-| Rede | Adaptador 1 em modo bridge, na placa Wi-Fi |
+| Rede | Adaptador 1 em modo host-only |
+| Endereço | `192.168.56.x`, via DHCP do VirtualBox |
 | Cliente Telnet | pacote `busybox-extras` |
 
 Portas isca: `21`, `23` e `3389`, definidas em `config/settings.yaml`.
+
+A rede host-only existe dentro do notebook e não depende de roteador nem
+de Wi-Fi. Bridge **não serve**: sobre Wi-Fi o tráfego entre VM e host não
+chega ao Npcap, e o sniffer não captura nada. O `INSTALACAO.md` explica o
+porquê.
 
 ## 1. Antes de começar
 
 - [ ] Notebook na tomada e configurado para **não suspender**. A VM trava
       com `soft lockup` se o host dormir.
-- [ ] **Uma só placa de rede ativa.** Com Wi-Fi e Ethernet na mesma faixa
-      não dá para saber por onde o pacote entrou.
-- [ ] **VPN desconectado.** Um túnel ativo desvia o tráfego da interface
-      que está sendo capturada.
+- [ ] VM com o adaptador em **host-only**, não em NAT nem em bridge.
+- [ ] `capture.interface` no `.env` apontando para o adaptador host-only.
 - [ ] **Dropbox ou OneDrive pausado**, se o projeto estiver dentro de uma
       pasta sincronizada.
 - [ ] Ligar a VM pouco antes de usar, não horas antes.
+
+Com host-only não importa se há Wi-Fi e cabo ligados ao mesmo tempo, nem se
+há VPN ativo: essa rede é isolada e não passa por nenhum dos dois.
 
 ## 2. Verificar o ambiente
 
@@ -73,18 +81,10 @@ python -c "from scapy.all import show_interfaces; show_interfaces()"
 
 ## 3. Descobrir os IPs
 
-Os endereços vêm de DHCP e **mudam a cada rede**. Nunca reaproveite os de
-uma sessão anterior.
+O honeypot é sempre **`192.168.56.1`** na rede host-only. Esse endereço é
+do adaptador virtual e não muda.
 
-No notebook:
-
-```powershell
-Get-NetIPAddress -AddressFamily IPv4 |
-  Where-Object { $_.IPAddress -ne '127.0.0.1' } |
-  Select-Object InterfaceAlias, IPAddress
-```
-
-Na VM:
+O IP da VM vem do DHCP do VirtualBox e **muda entre sessões**. Na VM:
 
 ```sh
 ip a
@@ -92,11 +92,10 @@ ip a
 
 Anote:
 
-- IP do honeypot (máquina B): `__________`
-- IP do atacante (máquina A): `__________`
+- IP do atacante (máquina A): `192.168.56.___`
 
-Os dois precisam estar na mesma faixa. Se a VM vier com `169.254.x`, o
-bridge não pegou — veja Problemas conhecidos.
+Se a VM vier com `169.254.x`, o DHCP da rede host-only está desligado —
+veja Problemas conhecidos.
 
 ## 4. Liberar as portas isca
 
@@ -112,68 +111,91 @@ Conferir:
 Get-NetFirewallRule -DisplayName "SoraShield_iscas" | Get-NetFirewallPortFilter
 ```
 
-## 5. Teste de conexão
+## 5. Subir o honeypot
 
-Janela 1 do notebook, **como administrador** — listener na porta 23:
+Duas janelas no notebook, **como administrador**, uma em cada.
+
+Os serviços isca:
 
 ```powershell
-$l = New-Object System.Net.Sockets.TcpListener([System.Net.IPAddress]::Any, 23); $l.Start(); "ouvindo na 23"; while($true){ $c=$l.AcceptTcpClient(); "conexao de " + $c.Client.RemoteEndPoint; $c.Close() }
+mingw32-make escutar
+```
+
+O sniffer com a contagem por IP:
+
+```powershell
+mingw32-make monitorar
+```
+
+O cabeçalho do `monitorar` tem que mostrar o adaptador host-only. Se
+mostrar `Wi-Fi`, o `.env` está errado e nada vai ser capturado.
+
+## 6. Teste de captura e contagem
+
+Na VM, seis tentativas:
+
+```sh
+for i in 1 2 3 4 5 6; do nc -w 2 192.168.56.1 23 < /dev/null; sleep 1; done
+```
+
+**Esperado no `monitorar`:** para cada conexão, as três etapas do
+handshake (`SYN`, `SYN-ACK`, `ACK conexao estabelecida`), e logo após o
+quinto `SYN` a linha:
+
+```
+>>> LIMITE ATINGIDO: 192.168.56.x com 5 tentativas
+```
+
+O limite vem de `firewall.max_attempts`. A mensagem sai **uma vez só**,
+mesmo com a sexta conexão vindo depois.
+
+**Esperado no `escutar`:** as seis conexões, com as mesmas portas de
+origem que aparecem no `monitorar`. Portas iguais nas duas janelas é o que
+prova que ambos viram as mesmas conexões.
+
+Ao encerrar o `monitorar` com `Ctrl + C`, sai o resumo por IP.
+
+## 7. Teste de bloqueio e desbloqueio
+
+Numa terceira janela, **como administrador**, bloqueie o IP da VM:
+
+```powershell
+netsh advfirewall firewall add rule name="SoraShield_192.168.56.x" dir=in action=block remoteip=192.168.56.x
 ```
 
 Na VM:
 
 ```sh
-telnet <IP-DO-HONEYPOT> 23
+nc -w 3 192.168.56.1 23 < /dev/null; echo "saida: $?"
 ```
 
-**Esperado:** `Connected to <IP>` na VM, e `conexao de <IP-DA-VM>:porta`
-no listener. O `Connection closed by foreign host` logo em seguida é
-normal: o listener de teste fecha a conexão assim que registra a origem.
+**Esperado:** `saida: 1`. No `monitorar` aparece só o `SYN`, sem
+`SYN-ACK` nem `ACK`. No `escutar`, nada.
 
-Para sair do telnet: `Ctrl + ]` e depois `quit`.
+Ver o `SYN` mesmo com o IP bloqueado é o comportamento correto: o Npcap
+captura abaixo do firewall, então o honeypot continua enxergando quem já
+baniu.
 
-## 6. Teste de bloqueio
-
-Janela 2 do notebook, **como administrador**:
+Remova a regra:
 
 ```powershell
-netsh advfirewall firewall add rule name="SoraShield_<IP-DA-VM>" dir=in action=block remoteip=<IP-DA-VM>
+netsh advfirewall firewall delete rule name="SoraShield_192.168.56.x"
 ```
 
-Na VM:
+E repita o `nc` na VM. **Esperado:** `saida: 0` e o handshake completo de
+volta no `monitorar`.
 
-```sh
-telnet <IP-DO-HONEYPOT> 23
-```
-
-**Esperado:** `Operation timed out`.
-
-O Windows avalia regras de bloqueio antes das de liberação, por isso esta
-vence a `SoraShield_iscas` mesmo com a porta 23 liberada.
-
-## 7. Teste de desbloqueio
-
-No notebook:
-
-```powershell
-netsh advfirewall firewall delete rule name="SoraShield_<IP-DA-VM>"
-```
-
-Na VM:
-
-```sh
-telnet <IP-DO-HONEYPOT> 23
-```
-
-**Esperado:** conecta de novo.
+O Windows avalia regras de bloqueio antes das de liberação, por isso a
+regra de bloqueio vence a `SoraShield_iscas` mesmo com a porta 23
+liberada.
 
 ## 8. Limpeza
 
 ```powershell
-Get-NetFirewallRule -DisplayName "SoraShield_*" | Remove-NetFirewallRule
+mingw32-make limpar
 ```
 
-E `Ctrl + C` na janela do listener.
+E `Ctrl + C` nas janelas do `escutar` e do `monitorar`.
 
 ## Problemas conhecidos
 
@@ -181,7 +203,8 @@ E `Ctrl + C` na janela do listener.
 |---|---|---|
 | `ping` ao honeypot dá 100% de perda | O Windows não responde a ICMP por padrão | Normal. Teste com telnet, nunca com ping. |
 | VM mostra `soft lockup - CPU#N stuck` | O notebook suspendeu com a VM ligada | Reinicie a VM. Previna desativando a suspensão. |
-| VM com IP `169.254.x` | O bridge não funcionou | Confira Configurações → Rede → Placa em modo Bridge, na placa certa. |
+| VM com IP `169.254.x` | DHCP da rede host-only desligado | Arquivo → Ferramentas → Gerenciador de Rede, aba Redes Host-Only, marque o DHCP. |
+| `escutar` recebe conexões mas `monitorar` não mostra nada | VM em bridge, ou `.env` apontando para a placa errada | Adaptador da VM em host-only e `INTERFACE=VirtualBox Host-Only Ethernet Adapter`. |
 | O bloqueio não surte efeito | O teste foi contra `127.0.0.1` | O Windows não filtra loopback. O ataque precisa vir da VM. |
 | `Activate.ps1` barrado | Política de execução do PowerShell | `Set-ExecutionPolicy -Scope Process -ExecutionPolicy RemoteSigned` |
 | Scapy não captura nada | Interface errada ou falta de privilégio | Confira com `show_interfaces()` e rode como administrador. |
