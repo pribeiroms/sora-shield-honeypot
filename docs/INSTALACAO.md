@@ -28,17 +28,41 @@ netsh advfirewall firewall add rule ... remoteip=127.0.0.1
 Test-NetConnection 127.0.0.1 -Port 2323    ->  True   (ainda passa)
 ```
 
-Com o atacante numa VM em modo bridge, com IP próprio na rede, a mesma
-regra funciona:
+Com o atacante numa máquina virtual com IP próprio, a mesma regra funciona:
 
 ```
-telnet <honeypot> 23   ->  Connected
+nc -w 3 <honeypot> 23   ->  saida: 0   (conecta)
 netsh advfirewall firewall add rule ... remoteip=<ip-da-vm>
-telnet <honeypot> 23   ->  Operation timed out
+nc -w 3 <honeypot> 23   ->  saida: 1   (bloqueado)
+netsh advfirewall firewall delete rule ...
+nc -w 3 <honeypot> 23   ->  saida: 0   (acesso restabelecido)
 ```
 
 Quem tem só um computador resolve isso com uma máquina virtual, como
 descrito na Parte 2.
+
+## Por que rede host-only, e não bridge
+
+A VM atacante usa a rede **host-only** do VirtualBox. Essa escolha não é
+indiferente: em modo **bridge sobre Wi-Fi o sniffer não enxerga nada**.
+
+O padrão 802.11 não permite que uma estação envie quadros com endereço MAC
+de origem arbitrário. Para contornar isso, o VirtualBox reescreve o MAC da
+VM para o da placa do host e traduz de volta internamente. Como efeito
+colateral, a conversa entre convidado e host é resolvida dentro do driver
+de bridge e nunca passa pela camada onde o Npcap captura.
+
+Isso foi medido: com a VM em bridge disparando conexões sem parar, o
+listener recebeu 57 conexões enquanto o Scapy, capturando na mesma placa
+Wi-Fi e filtrando pelo IP da VM, devolveu zero pacotes TCP. O ARP capturado
+mostrava o IP da VM associado ao MAC do notebook, que é a tradução
+acontecendo.
+
+Em host-only o tráfego passa por um adaptador virtual de verdade do
+Windows, visível ao Npcap e sujeito ao Firewall. Os cinco elementos foram
+validados nesse modo. Como bônus, a rede host-only existe dentro da própria
+máquina: a demonstração não depende do Wi-Fi do local, que pode ter
+isolamento entre clientes.
 
 ## Requisitos
 
@@ -157,6 +181,15 @@ Esse comando tem função dupla: mostra o nome da interface **e** prova que o
 Npcap instalou corretamente. Se a lista vier vazia ou der erro de
 `wpcap.dll`, reinstale o Npcap.
 
+Para a demonstração com a VM atacante, o valor é o do adaptador host-only:
+
+```
+INTERFACE=VirtualBox Host-Only Ethernet Adapter
+```
+
+Se em vez da VM o atacante for um aparelho real na rede (notebook de um
+colega, celular), aí sim use o nome da placa física.
+
 O Scapy exibe a descrição longa do adaptador, mas aceita o nome curto do
 Windows (`Wi-Fi`, `Ethernet`). Para descobrir o nome curto:
 
@@ -230,17 +263,14 @@ No VirtualBox, **Novo**:
 A instalação automática precisa ficar desmarcada: o VirtualBox não sabe
 instalar o Alpine sozinho.
 
-## 3. Configurar a rede em bridge
+## 3. Rede durante a instalação
 
-**Faça antes de ligar a VM.** Sem rede, a instalação não baixa os pacotes.
+A VM precisa de internet para baixar os pacotes, e a rede host-only não
+tem saída para fora. Então a instalação é feita em **NAT** e a rede muda
+para host-only no passo 6, depois que tudo estiver instalado.
 
-Configurações → Rede → Adaptador 1:
-
-- **Conectado a:** Placa em modo Bridge
-- **Nome:** a sua placa Wi-Fi ou Ethernet
-
-Tem que ser bridge, não NAT. Em NAT a VM sai escondida atrás do IP do host
-e o problema do loopback volta.
+Configurações → Rede → Adaptador 1 → **NAT**. É o padrão, normalmente não
+precisa mexer.
 
 ## 4. Instalar o Alpine
 
@@ -296,16 +326,37 @@ apk update
 apk add busybox-extras
 ```
 
-Confirme que a VM pegou IP na mesma faixa do honeypot:
+Ainda em NAT, porque esse passo baixa pacote da internet.
+
+## 6. Mudar para a rede host-only
+
+Desligue a VM:
+
+```sh
+poweroff
+```
+
+Configurações → Rede → Adaptador 1 → **Placa de rede exclusiva de
+hospedeiro**, e escolha o `VirtualBox Host-Only Ethernet Adapter`.
+
+Ligue de novo e confirme o endereço:
 
 ```sh
 ip a
 ```
 
-A `eth0` deve ter um IP da rede local. Se vier `169.254.x`, o bridge não
-funcionou — reveja o passo 3.
+A `eth0` deve ter um IP em `192.168.56.x`, entregue pelo servidor DHCP do
+próprio VirtualBox. O honeypot, do outro lado, é sempre `192.168.56.1` —
+esse endereço é fixo, diferente dos IPs de rede local.
 
-## 6. Acesso por SSH (opcional)
+Não use `ping` para conferir se a VM alcança o honeypot: o Windows não
+responde a ICMP por padrão, e a falha não significa nada. O teste correto
+é por TCP, e está no `ROTEIRO_TESTES.md`.
+
+A partir daqui a VM não tem mais internet. Para instalar algo nela depois,
+volte o adaptador para NAT temporariamente.
+
+## 7. Acesso por SSH (opcional)
 
 Útil para copiar e colar comandos, que não funciona no console da VM.
 
@@ -337,7 +388,9 @@ Siga o [ROTEIRO_TESTES.md](ROTEIRO_TESTES.md), a partir da seção 3.
 | `pip install` falha pedindo Microsoft Visual C++ 14.0 | Python novo demais, sem pacote compilado do PyYAML | Use Python 3.13 |
 | `ping` ao honeypot dá 100% de perda | Windows não responde a ICMP por padrão | Normal. Teste com telnet. |
 | Bloqueio de firewall sem efeito | Teste feito contra `127.0.0.1` | O ataque precisa vir de outra máquina |
-| VM com IP `169.254.x` | Adaptador em NAT, ou bridge na placa errada | Reveja a Parte 2, passo 3 |
+| VM com IP `169.254.x` | Adaptador host-only sem servidor DHCP ativo | Arquivo -> Ferramentas -> Gerenciador de Rede, aba Redes Host-Only, marque o DHCP |
+| O listener recebe conexoes mas o sniffer nao captura nada | VM em modo bridge sobre Wi-Fi | Troque o adaptador da VM para host-only (Parte 2, passo 6) |
+| Sniffer sem eventos e `capture.interface` apontando para a placa Wi-Fi | Interface errada para o atacante em uso | Com VM host-only, use `VirtualBox Host-Only Ethernet Adapter` |
 | VM trava com `soft lockup` | O host suspendeu com a VM ligada | Reinicie a VM; desative a suspensão |
 | `WinError 10048` ao abrir porta | Porta ocupada (RDP na 3389, MySQL na 3306) | `Get-NetTCPConnection -LocalPort <porta> -State Listen` |
 | Scapy não captura nada | Interface errada ou falta de privilégio | `show_interfaces()` e rodar como administrador |
