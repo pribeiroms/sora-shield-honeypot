@@ -16,3 +16,4 @@ firewall:
 logging:
   file: "logs/events.log"
   report_file: "logs/tentativas.csv"    # relatorio das tentativas (CSV)
+
