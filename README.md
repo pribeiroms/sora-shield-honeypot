@@ -129,11 +129,27 @@ sudo PYTHONPATH=src .venv/bin/python -m sora_shield
 
 O bloqueio é removido sozinho depois de `block_duration_minutes` (use `0` para manter até remover à mão). Para consultar ou remover as regras manualmente, num terminal como administrador:
 
-```bash
+**Windows (PowerShell)**
+
+```powershell
+$env:PYTHONPATH = "src"
 python -m sora_shield.firewall.blocker listar
 python -m sora_shield.firewall.blocker desbloquear <ip>
 python -m sora_shield.firewall.blocker limpar
 ```
+
+**Linux**
+
+```bash
+sudo PYTHONPATH=src .venv/bin/python -m sora_shield.firewall.blocker limpar
+```
+
+Sem o `PYTHONPATH` o Python não acha o pacote e o comando falha com
+`No module named 'sora_shield'`. O alvo `mingw32-make limpar` já faz isso.
+
+O `limpar` remove apenas as regras de bloqueio, cujo nome termina com um
+endereço IP. A regra `SoraShield_iscas`, que libera a entrada nas portas
+isca, não é tocada.
 
 ---
 

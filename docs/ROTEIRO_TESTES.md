@@ -226,13 +226,20 @@ mingw32-make limpar
 
 E `Ctrl + C` na janela do `escutar`.
 
+O `limpar` remove só as regras de bloqueio, cujo nome termina com um IP.
+A `SoraShield_iscas`, que libera a entrada nas portas isca, continua lá —
+se ela fosse removida, o teste seguinte não receberia conexão nenhuma.
+
+Se mesmo assim sobrar alguma regra, o `monitorar` avisa no início da
+próxima execução, listando os IPs que já começam bloqueados.
+
 ## Checklist dos 5 elementos
 
 Ordem sugerida para o dia, com o que mostrar em cada um.
 
 | # | Elemento | Como provar | Situação |
 |---|---|---|---|
-| 1 | Serviços isca | `netstat -an \| findstr LISTENING` mostra 21, 23 e 3389; `telnet 192.168.56.1 23` da VM mostra o banner | Aguarda a #4 (PR #17); por enquanto o `escutar` abre as portas sem banner |
+| 1 | Serviços isca | `netstat -an \| findstr LISTENING` mostra 21, 23 e 3389; `telnet 192.168.56.1 23` da VM mostra o banner | Pronto |
 | 2 | Captura em tempo real | Seção 6, com o Wireshark ao lado no filtro `tcp.port in {21, 23, 3389}` e as mesmas portas de origem nos dois | Pronto |
 | 3 | Identificação do invasor | Seção 6: IP e portas de origem e destino em cada linha e a tabela de status com a contagem | Pronto |
 | 4 | Registro do payload | Telnet da VM digitando usuário e senha; aparecem na linha `LOGIN`, no CSV e no resumo | Aguarda a #7; o relatório já tem a coluna |
@@ -249,7 +256,7 @@ Para cada problema, o que fazer **na hora**, sem depurar na frente da banca.
 | Linha de bloqueio termina em `(simulado ...)` | `firewall.enabled` está `false`. Troque para `true` e suba de novo. |
 | `ERRO firewall ... administrador` | A janela não é de administrador. Abra outra como administrador. |
 | Bloqueio automático não funciona de jeito nenhum | Mostre o elemento 5 com os comandos manuais abaixo. |
-| A VM não conecta nem antes do bloqueio | Sobrou regra de um ensaio: `python -m sora_shield.firewall.blocker limpar`. Confira também a `SoraShield_iscas` da seção 4. |
+| A VM não conecta nem antes do bloqueio | Sobrou regra de um ensaio: `mingw32-make limpar`. Confira também a `SoraShield_iscas` da seção 4. |
 | `WinError 10048` ao subir o `escutar` | Porta ocupada: `Get-NetTCPConnection -LocalPort <porta> -State Listen`. |
 | VM travada | Reinicie a VM; o IP pode mudar. |
 | Sem Telnet na VM | Use `nc 192.168.56.1 23`, que se comporta igual para a demonstração. |
