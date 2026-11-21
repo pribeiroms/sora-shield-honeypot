@@ -121,14 +121,16 @@ Os serviços isca:
 mingw32-make escutar
 ```
 
-O sniffer com a contagem por IP:
+O sniffer com a contagem por IP, o bloqueio no firewall e o relatório:
 
 ```powershell
 mingw32-make monitorar
 ```
 
 O cabeçalho do `monitorar` tem que mostrar o adaptador host-only. Se
-mostrar `Wi-Fi`, o `.env` está errado e nada vai ser capturado.
+mostrar `Wi-Fi`, o `.env` está errado e nada vai ser capturado. Ele
+também diz se o bloqueio está `real` ou `simulado`: para os testes da
+seção 7, `firewall.enabled` precisa estar `true` no `settings.yaml`.
 
 ## 6. Teste de captura e contagem
 
@@ -139,31 +141,32 @@ for i in 1 2 3 4 5 6; do nc -w 2 192.168.56.1 23 < /dev/null; sleep 1; done
 ```
 
 **Esperado no `monitorar`:** para cada conexão, as três etapas do
-handshake (`SYN`, `SYN-ACK`, `ACK conexao estabelecida`), e logo após o
-quinto `SYN` a linha:
+handshake (`SYN`, `SYN-ACK`, `ACK conexao estabelecida`), cada tipo numa
+cor, e logo após o quinto `SYN` as linhas:
 
+```text
+LIMITE     192.168.56.x chegou a 5 tentativas
+BLOQUEIO   192.168.56.x bloqueado no firewall apos 5 tentativas
 ```
->>> LIMITE ATINGIDO: 192.168.56.x com 5 tentativas
-```
 
-O limite vem de `firewall.max_attempts`. A mensagem sai **uma vez só**,
-mesmo com a sexta conexão vindo depois.
+seguidas da tabela de status por IP, com o atacante como `bloqueado`.
 
-**Esperado no `escutar`:** as seis conexões, com as mesmas portas de
-origem que aparecem no `monitorar`. Portas iguais nas duas janelas é o que
-prova que ambos viram as mesmas conexões.
+O limite vem de `firewall.max_attempts`. As mensagens saem **uma vez
+só**. A sexta conexão já esbarra no bloqueio: no `monitorar` aparece só o
+`SYN`, e na VM o `nc` desiste. A quinta pode completar ou não, conforme o
+`netsh` termine de criar a regra antes ou depois do `ACK` dela.
 
-Ao encerrar o `monitorar` com `Ctrl + C`, sai o resumo por IP.
+Com `firewall.enabled: false` o fluxo é o mesmo, mas a linha de bloqueio
+termina em `(simulado ...)` e o firewall não é alterado: as seis conexões
+completam.
+
+**Esperado no `escutar`:** as conexões que completaram, com as mesmas
+portas de origem que aparecem no `monitorar`. Portas iguais nas duas
+janelas é o que prova que ambos viram as mesmas conexões.
 
 ## 7. Teste de bloqueio e desbloqueio
 
-Numa terceira janela, **como administrador**, bloqueie o IP da VM:
-
-```powershell
-netsh advfirewall firewall add rule name="SoraShield_192.168.56.x" dir=in action=block remoteip=192.168.56.x
-```
-
-Na VM:
+Com o `monitorar` rodando e o atacante já bloqueado pela seção 6, na VM:
 
 ```sh
 nc -w 3 192.168.56.1 23 < /dev/null; echo "saida: $?"
@@ -176,26 +179,90 @@ Ver o `SYN` mesmo com o IP bloqueado é o comportamento correto: o Npcap
 captura abaixo do firewall, então o honeypot continua enxergando quem já
 baniu.
 
-Remova a regra:
+Conferir a regra criada, numa terceira janela **como administrador**:
 
 ```powershell
-netsh advfirewall firewall delete rule name="SoraShield_192.168.56.x"
+python -m sora_shield.firewall.blocker listar
+```
+
+Desbloquear:
+
+```powershell
+python -m sora_shield.firewall.blocker desbloquear 192.168.56.x
 ```
 
 E repita o `nc` na VM. **Esperado:** `saida: 0` e o handshake completo de
 volta no `monitorar`.
 
+O desbloqueio também acontece sozinho depois de
+`firewall.block_duration_minutes`. Para ver isso no ensaio sem esperar uma
+hora, use `1` no `settings.yaml`: um minuto depois do bloqueio sai a linha
+`LIBERADO 192.168.56.x desbloqueado` e a tabela de status volta a mostrar
+o IP como `liberado`, com a contagem zerada.
+
 O Windows avalia regras de bloqueio antes das de liberação, por isso a
 regra de bloqueio vence a `SoraShield_iscas` mesmo com a porta 23
 liberada.
 
-## 8. Limpeza
+## 8. Relatório de tentativas
+
+Encerre o `monitorar` com `Ctrl + C`. **Esperado:** a tabela final por IP
+e o resumo de tentativas, com `[BLOQUEADO]` ao lado de quem continuava
+bloqueado.
+
+O detalhe fica em `logs/tentativas.csv` (caminho em
+`logging.report_file`), uma linha por tentativa com data e hora, IP,
+portas, usuário e senha. Ele é gravado na hora de cada tentativa, então
+continua lá mesmo se o programa cair. Abre direto no Excel.
+
+As regras de bloqueio **ficam** no firewall ao encerrar, para dar para
+mostrar o timeout depois. A seção 9 remove.
+
+## 9. Limpeza
 
 ```powershell
 mingw32-make limpar
 ```
 
-E `Ctrl + C` nas janelas do `escutar` e do `monitorar`.
+E `Ctrl + C` na janela do `escutar`.
+
+## Checklist dos 5 elementos
+
+Ordem sugerida para o dia, com o que mostrar em cada um.
+
+| # | Elemento | Como provar | Situação |
+|---|---|---|---|
+| 1 | Serviços isca | `netstat -an \| findstr LISTENING` mostra 21, 23 e 3389; `telnet 192.168.56.1 23` da VM mostra o banner | Aguarda a #4 (PR #17); por enquanto o `escutar` abre as portas sem banner |
+| 2 | Captura em tempo real | Seção 6, com o Wireshark ao lado no filtro `tcp.port in {21, 23, 3389}` e as mesmas portas de origem nos dois | Pronto |
+| 3 | Identificação do invasor | Seção 6: IP e portas de origem e destino em cada linha e a tabela de status com a contagem | Pronto |
+| 4 | Registro do payload | Telnet da VM digitando usuário e senha; aparecem na linha `LOGIN`, no CSV e no resumo | Aguarda a #7; o relatório já tem a coluna |
+| 5 | Bloqueio automático | Seções 6 e 7: bloqueio no limite, timeout, desbloqueio e acesso de volta | Pronto |
+
+## Plano B
+
+Para cada problema, o que fazer **na hora**, sem depurar na frente da banca.
+
+| Se acontecer | Faça |
+|---|---|
+| IP da VM mudou | `ip a` na VM e use o novo. O honeypot continua `192.168.56.1`. |
+| `monitorar` não mostra nada | Interface trocou: `show_interfaces()`, corrija o `INTERFACE` do `.env` e suba de novo. |
+| Linha de bloqueio termina em `(simulado ...)` | `firewall.enabled` está `false`. Troque para `true` e suba de novo. |
+| `ERRO firewall ... administrador` | A janela não é de administrador. Abra outra como administrador. |
+| Bloqueio automático não funciona de jeito nenhum | Mostre o elemento 5 com os comandos manuais abaixo. |
+| A VM não conecta nem antes do bloqueio | Sobrou regra de um ensaio: `python -m sora_shield.firewall.blocker limpar`. Confira também a `SoraShield_iscas` da seção 4. |
+| `WinError 10048` ao subir o `escutar` | Porta ocupada: `Get-NetTCPConnection -LocalPort <porta> -State Listen`. |
+| VM travada | Reinicie a VM; o IP pode mudar. |
+| Sem Telnet na VM | Use `nc 192.168.56.1 23`, que se comporta igual para a demonstração. |
+
+Bloqueio e desbloqueio manuais, **como administrador**:
+
+```powershell
+netsh advfirewall firewall add rule name="SoraShield_192.168.56.x" dir=in action=block remoteip=192.168.56.x
+```
+
+```powershell
+netsh advfirewall firewall delete rule name="SoraShield_192.168.56.x"
+```
 
 ## Problemas conhecidos
 

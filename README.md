@@ -41,7 +41,8 @@ sora-shield-honeypot/
 │   ├── honeypot/            # listeners e serviços falsos
 │   ├── capture/             # captura de pacotes ao vivo
 │   ├── firewall/            # bloqueio automático de IPs
-│   ├── logging/             # registro de eventos
+│   ├── logging/             # registro de eventos e relatório de tentativas
+│   ├── ui/                  # interface no terminal em tempo real
 │   └── utils/               # funções auxiliares (ex.: leitura de config)
 ├── dashboard/               # painel de visualização (planejado)
 ├── docs/                    # documentação do projeto
@@ -124,7 +125,15 @@ sudo PYTHONPATH=src .venv/bin/python -m sora_shield
 | Sistema | Ferramenta | Exemplo de regra criada |
 |---|---|---|
 | Windows | `netsh advfirewall` | `netsh advfirewall firewall add rule name="SoraShield_<ip>" dir=in action=block remoteip=<ip>` |
-| Linux | `iptables` | `iptables -A INPUT -s <ip> -j DROP` |
+| Linux | `iptables` | `iptables -A INPUT -s <ip> -j DROP -m comment --comment SoraShield_<ip>` |
+
+O bloqueio é removido sozinho depois de `block_duration_minutes` (use `0` para manter até remover à mão). Para consultar ou remover as regras manualmente, num terminal como administrador:
+
+```bash
+python -m sora_shield.firewall.blocker listar
+python -m sora_shield.firewall.blocker desbloquear <ip>
+python -m sora_shield.firewall.blocker limpar
+```
 
 ---
 
@@ -141,9 +150,10 @@ As configurações ficam em `config/settings.yaml`:
 | `capture` | `save_pcap` | Salvar os pacotes capturados em arquivo `.pcap` |
 | `firewall` | `enabled` | Ativa ou desativa o bloqueio real |
 | `firewall` | `max_attempts` | Tentativas antes de bloquear um IP |
-| `firewall` | `block_duration_minutes` | Tempo de bloqueio |
+| `firewall` | `block_duration_minutes` | Tempo de bloqueio, em minutos (`0` = sem desbloqueio automático) |
 | `firewall` | `whitelist` | IPs que nunca serão bloqueados |
 | `logging` | `file` | Caminho do arquivo de log |
+| `logging` | `report_file` | Relatório CSV das tentativas de acesso (data e hora, IP, porta, usuário e senha) |
 
 > **Atenção:** o bloqueio no firewall vem **desativado por padrão**. Teste primeiro em uma VM ou ambiente controlado antes de ativar.
 
