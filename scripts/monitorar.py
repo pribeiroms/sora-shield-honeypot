@@ -58,6 +58,17 @@ def main():
         relatorio.registrar_evento(evento)
         contador.registrar(evento)
 
+    orfas = bloqueador.regras_orfas()
+    if orfas:
+        tela.erro(
+            f"ATENCAO: {len(orfas)} regra(s) de bloqueio sobraram de uma "
+            f"execucao anterior: {', '.join(orfas)}"
+        )
+        tela.erro(
+            "Esses IPs ja comecam bloqueados e nao vao conseguir conectar. "
+            "Para remover: mingw32-make limpar"
+        )
+
     modo = "real" if bloqueador.ativo else "simulado"
     tela.info(f"Monitorando {interface!r}, portas {portas}")
     tela.info(f"Limite {limite} tentativas, bloqueio {modo}, "
