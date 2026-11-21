@@ -138,3 +138,27 @@ def test_listar_le_saida_do_netsh():
     )
     firewall = FirewallWindows(lambda c: subprocess.CompletedProcess(c, 0, saida, ""))
     assert firewall.listar() == ["10.0.0.5", "10.0.0.6"]
+
+
+def test_listar_ignora_regra_que_nao_termina_em_ip():
+    # A SoraShield_iscas libera as portas isca. Quem chama listar() usa o
+    # resultado para remover, entao ela nao pode aparecer: ja foi apagada
+    # por engano uma vez, e sem ela nenhuma conexao chega ao honeypot.
+    saida = (
+        "Rule Name:                            SoraShield_iscas\n"
+        "Rule Name:                            SoraShield_10.0.0.5\n"
+    )
+    firewall = FirewallWindows(lambda c: subprocess.CompletedProcess(c, 0, saida, ""))
+    assert firewall.listar() == ["10.0.0.5"]
+
+
+def test_regras_orfas_mostra_bloqueios_de_execucao_anterior():
+    firewall = FirewallFalso()
+    firewall.regras.add("10.0.0.9")  # sobrou de antes de o programa subir
+    bloqueador, _, _ = novo(ativo=True, firewall=firewall)
+
+    assert bloqueador.regras_orfas() == ["10.0.0.9"]
+
+    bloqueador.bloquear("10.0.0.5")
+    # O que foi bloqueado nesta execucao nao e orfao.
+    assert bloqueador.regras_orfas() == ["10.0.0.9"]

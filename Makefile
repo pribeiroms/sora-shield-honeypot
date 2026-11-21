@@ -35,7 +35,7 @@ atacar:
 	$(PYTHON) scripts/atacar.py --host $(HOST) --portas $(PORTAS) --tentativas $(TENTATIVAS)
 
 limpar:
-	powershell -Command "Get-NetFirewallRule -DisplayName 'SoraShield_*' -ErrorAction SilentlyContinue | Remove-NetFirewallRule"
+	set PYTHONPATH=src && $(PYTHON) -m sora_shield.firewall.blocker limpar
 
 teste:
 	set PYTHONPATH=src && $(PYTHON) -m pytest
