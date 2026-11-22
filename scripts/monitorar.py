@@ -15,6 +15,7 @@ from sora_shield.firewall.blocker import Bloqueador
 from sora_shield.logging.event_logger import RelatorioTentativas
 from sora_shield.ui.terminal import Terminal
 from sora_shield.utils.config import load_config
+from sora_shield.utils.privilegios import aviso_de_privilegio
 
 
 def main():
@@ -57,6 +58,11 @@ def main():
         tela.evento_rede(evento)
         relatorio.registrar_evento(evento)
         contador.registrar(evento)
+
+    aviso = aviso_de_privilegio()
+    if aviso:
+        for linha in aviso.splitlines():
+            tela.erro(linha)
 
     orfas = bloqueador.regras_orfas()
     if orfas:
