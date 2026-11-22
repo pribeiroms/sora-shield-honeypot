@@ -4,9 +4,9 @@ Guia para montar o ambiente de desenvolvimento e testes numa máquina nova.
 Para repetir os testes num ambiente já montado, veja
 [ROTEIRO_TESTES.md](ROTEIRO_TESTES.md).
 
-> **Cole um comando por vez.** Várias linhas coladas de uma só vez no
-> PowerShell viram um comando único, e ele falha com erro de parâmetro
-> ou de token inesperado.
+> **Cada bloco abaixo é um comando só.** Copie e cole um bloco por vez.
+> Duas linhas coladas juntas no PowerShell viram um comando único e
+> falham com erro de parâmetro ou de token inesperado.
 
 ## Por que duas máquinas
 
@@ -147,7 +147,13 @@ quebram o repositório.
 
 ```powershell
 cd C:\Users\<voce>\projetos
+```
+
+```powershell
 git clone https://github.com/pribeiroms/sora-shield-honeypot.git
+```
+
+```powershell
 cd sora-shield-honeypot
 ```
 
@@ -155,8 +161,17 @@ Ambiente virtual e dependências:
 
 ```powershell
 py -3.13 -m venv .venv
+```
+
+```powershell
 .venv\Scripts\Activate.ps1
+```
+
+```powershell
 python --version
+```
+
+```powershell
 pip install -r requirements.txt
 ```
 
@@ -174,6 +189,9 @@ máquina. Descubra o nome da sua:
 
 ```powershell
 .venv\Scripts\Activate.ps1
+```
+
+```powershell
 python -c "from scapy.all import show_interfaces; show_interfaces()"
 ```
 
@@ -194,9 +212,7 @@ O Scapy exibe a descrição longa do adaptador, mas aceita o nome curto do
 Windows (`Wi-Fi`, `Ethernet`). Para descobrir o nome curto:
 
 ```powershell
-Get-NetIPAddress -AddressFamily IPv4 |
-  Where-Object { $_.IPAddress -ne '127.0.0.1' } |
-  Select-Object InterfaceAlias, IPAddress
+Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.IPAddress -ne '127.0.0.1' } | Select-Object InterfaceAlias, IPAddress
 ```
 
 Ajuste o `capture.interface` no `settings.yaml` com esse valor.
@@ -219,8 +235,7 @@ fácil confundir isso com bug no código.
 ## 8. Verificar
 
 ```powershell
-$env:PYTHONPATH = "src"
-python -m sora_shield
+$env:PYTHONPATH = "src"; python -m sora_shield
 ```
 
 Deve imprimir as portas isca lidas do `settings.yaml`.
@@ -323,6 +338,9 @@ de novo. Ligue e entre com a senha definida.
 
 ```sh
 apk update
+```
+
+```sh
 apk add busybox-extras
 ```
 
@@ -362,8 +380,17 @@ volte o adaptador para NAT temporariamente.
 
 ```sh
 apk add openssh
+```
+
+```sh
 sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config
+```
+
+```sh
 rc-update add sshd default
+```
+
+```sh
 rc-service sshd start
 ```
 

@@ -71,6 +71,9 @@ Clone o repositório (substitua `<usuario>` pelo usuário dono do repositório o
 
 ```bash
 git clone https://github.com/<usuario>/sora-shield-honeypot.git
+```
+
+```bash
 cd sora-shield-honeypot
 ```
 
@@ -80,8 +83,17 @@ Crie e ative um ambiente virtual (opcional, mas recomendado) e instale as depend
 
 ```powershell
 python -m venv .venv
+```
+
+```powershell
 .venv\Scripts\Activate.ps1
+```
+
+```powershell
 pip install -r requirements.txt
+```
+
+```powershell
 copy .env.example .env
 ```
 
@@ -89,8 +101,17 @@ copy .env.example .env
 
 ```bash
 python3 -m venv .venv
+```
+
+```bash
 source .venv/bin/activate
+```
+
+```bash
 pip install -r requirements.txt
+```
+
+```bash
 cp .env.example .env
 ```
 
@@ -108,8 +129,7 @@ A captura de pacotes e o bloqueio no firewall exigem privilégios elevados.
 **Windows:** abra o PowerShell **como administrador** (clique com o botão direito em *Windows PowerShell* > *Executar como administrador*), entre na pasta do projeto e rode:
 
 ```powershell
-$env:PYTHONPATH = "src"
-python -m sora_shield
+$env:PYTHONPATH = "src"; python -m sora_shield
 ```
 
 **Linux:**
@@ -132,10 +152,15 @@ O bloqueio é removido sozinho depois de `block_duration_minutes` (use `0` para 
 **Windows (PowerShell)**
 
 ```powershell
-$env:PYTHONPATH = "src"
-python -m sora_shield.firewall.blocker listar
-python -m sora_shield.firewall.blocker desbloquear <ip>
-python -m sora_shield.firewall.blocker limpar
+$env:PYTHONPATH = "src"; python -m sora_shield.firewall.blocker listar
+```
+
+```powershell
+$env:PYTHONPATH = "src"; python -m sora_shield.firewall.blocker desbloquear <ip>
+```
+
+```powershell
+$env:PYTHONPATH = "src"; python -m sora_shield.firewall.blocker limpar
 ```
 
 **Linux**
@@ -180,8 +205,7 @@ As configurações ficam em `config/settings.yaml`:
 **Windows (PowerShell)**
 
 ```powershell
-$env:PYTHONPATH = "src"
-pytest
+$env:PYTHONPATH = "src"; pytest
 ```
 
 **Linux**

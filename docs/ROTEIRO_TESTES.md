@@ -4,9 +4,9 @@ Procedimento para validar o ambiente antes de uma sessão de testes ou da
 apresentação. Assume que as instalações já foram feitas. Para montar o
 ambiente do zero, veja [INSTALACAO.md](INSTALACAO.md).
 
-> **Cole um comando por vez.** Várias linhas coladas de uma só vez no
-> PowerShell viram um comando único, e ele falha com erro de parâmetro
-> ou de token inesperado.
+> **Cada bloco abaixo é um comando só.** Copie e cole um bloco por vez.
+> Duas linhas coladas juntas no PowerShell viram um comando único e
+> falham com erro de parâmetro ou de token inesperado.
 
 ## Ambiente montado
 
@@ -60,10 +60,18 @@ PowerShell na pasta do projeto:
 
 ```powershell
 .venv\Scripts\Activate.ps1
+```
+
+```powershell
 python --version
+```
+
+```powershell
 python -c "import scapy; print(scapy.__version__)"
-$env:PYTHONPATH = "src"
-python -m sora_shield
+```
+
+```powershell
+$env:PYTHONPATH = "src"; python -m sora_shield
 ```
 
 O último comando deve listar as portas isca. Se o `Activate.ps1` for
@@ -182,14 +190,23 @@ baniu.
 Conferir a regra criada, numa terceira janela **como administrador**:
 
 ```powershell
-python -m sora_shield.firewall.blocker listar
+mingw32-make listar
 ```
 
 Desbloquear:
 
 ```powershell
-python -m sora_shield.firewall.blocker desbloquear 192.168.56.x
+mingw32-make desbloquear IP=192.168.56.x
 ```
+
+> **Na apresentação, prefira o desbloqueio automático.** O `desbloquear`
+> roda num processo separado: ele remove a regra do firewall, mas não tem
+> como avisar o `monitorar` que está rodando. A tabela continua mostrando
+> o IP como bloqueado, a contagem dele não volta a zero e, por já ter
+> passado do limite uma vez, aquele IP não é bloqueado de novo naquela
+> execução. O desbloqueio por tempo não tem esse problema, porque
+> acontece dentro do mesmo processo. Use o comando manual para limpar
+> depois da sessão, não durante.
 
 E repita o `nc` na VM. **Esperado:** `saida: 0` e o handshake completo de
 volta no `monitorar`.
