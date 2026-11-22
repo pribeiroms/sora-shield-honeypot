@@ -4,9 +4,9 @@ Procedimento para validar o ambiente antes de uma sessão de testes ou da
 apresentação. Assume que as instalações já foram feitas. Para montar o
 ambiente do zero, veja [INSTALACAO.md](INSTALACAO.md).
 
-> **Cole um comando por vez.** Várias linhas coladas de uma só vez no
-> PowerShell viram um comando único, e ele falha com erro de parâmetro
-> ou de token inesperado.
+> **Cada bloco abaixo é um comando só.** Copie e cole um bloco por vez.
+> Duas linhas coladas juntas no PowerShell viram um comando único e
+> falham com erro de parâmetro ou de token inesperado.
 
 ## Ambiente montado
 
@@ -60,10 +60,18 @@ PowerShell na pasta do projeto:
 
 ```powershell
 .venv\Scripts\Activate.ps1
+```
+
+```powershell
 python --version
+```
+
+```powershell
 python -c "import scapy; print(scapy.__version__)"
-$env:PYTHONPATH = "src"
-python -m sora_shield
+```
+
+```powershell
+$env:PYTHONPATH = "src"; python -m sora_shield
 ```
 
 O último comando deve listar as portas isca. Se o `Activate.ps1` for
@@ -182,14 +190,23 @@ baniu.
 Conferir a regra criada, numa terceira janela **como administrador**:
 
 ```powershell
-python -m sora_shield.firewall.blocker listar
+mingw32-make listar
 ```
 
 Desbloquear:
 
 ```powershell
-python -m sora_shield.firewall.blocker desbloquear 192.168.56.x
+mingw32-make desbloquear IP=192.168.56.x
 ```
+
+> **Na apresentação, prefira o desbloqueio automático.** O `desbloquear`
+> roda num processo separado: ele remove a regra do firewall, mas não tem
+> como avisar o `monitorar` que está rodando. A tabela continua mostrando
+> o IP como bloqueado, a contagem dele não volta a zero e, por já ter
+> passado do limite uma vez, aquele IP não é bloqueado de novo naquela
+> execução. O desbloqueio por tempo não tem esse problema, porque
+> acontece dentro do mesmo processo. Use o comando manual para limpar
+> depois da sessão, não durante.
 
 E repita o `nc` na VM. **Esperado:** `saida: 0` e o handshake completo de
 volta no `monitorar`.
@@ -226,13 +243,20 @@ mingw32-make limpar
 
 E `Ctrl + C` na janela do `escutar`.
 
+O `limpar` remove só as regras de bloqueio, cujo nome termina com um IP.
+A `SoraShield_iscas`, que libera a entrada nas portas isca, continua lá —
+se ela fosse removida, o teste seguinte não receberia conexão nenhuma.
+
+Se mesmo assim sobrar alguma regra, o `monitorar` avisa no início da
+próxima execução, listando os IPs que já começam bloqueados.
+
 ## Checklist dos 5 elementos
 
 Ordem sugerida para o dia, com o que mostrar em cada um.
 
 | # | Elemento | Como provar | Situação |
 |---|---|---|---|
-| 1 | Serviços isca | `netstat -an \| findstr LISTENING` mostra 21, 23 e 3389; `telnet 192.168.56.1 23` da VM mostra o banner | Aguarda a #4 (PR #17); por enquanto o `escutar` abre as portas sem banner |
+| 1 | Serviços isca | `netstat -an \| findstr LISTENING` mostra 21, 23 e 3389; `telnet 192.168.56.1 23` da VM mostra o banner | Pronto |
 | 2 | Captura em tempo real | Seção 6, com o Wireshark ao lado no filtro `tcp.port in {21, 23, 3389}` e as mesmas portas de origem nos dois | Pronto |
 | 3 | Identificação do invasor | Seção 6: IP e portas de origem e destino em cada linha e a tabela de status com a contagem | Pronto |
 | 4 | Registro do payload | Telnet da VM digitando usuário e senha; aparecem na linha `LOGIN`, no CSV e no resumo | Aguarda a #7; o relatório já tem a coluna |
@@ -249,7 +273,7 @@ Para cada problema, o que fazer **na hora**, sem depurar na frente da banca.
 | Linha de bloqueio termina em `(simulado ...)` | `firewall.enabled` está `false`. Troque para `true` e suba de novo. |
 | `ERRO firewall ... administrador` | A janela não é de administrador. Abra outra como administrador. |
 | Bloqueio automático não funciona de jeito nenhum | Mostre o elemento 5 com os comandos manuais abaixo. |
-| A VM não conecta nem antes do bloqueio | Sobrou regra de um ensaio: `python -m sora_shield.firewall.blocker limpar`. Confira também a `SoraShield_iscas` da seção 4. |
+| A VM não conecta nem antes do bloqueio | Sobrou regra de um ensaio: `mingw32-make limpar`. Confira também a `SoraShield_iscas` da seção 4. |
 | `WinError 10048` ao subir o `escutar` | Porta ocupada: `Get-NetTCPConnection -LocalPort <porta> -State Listen`. |
 | VM travada | Reinicie a VM; o IP pode mudar. |
 | Sem Telnet na VM | Use `nc 192.168.56.1 23`, que se comporta igual para a demonstração. |

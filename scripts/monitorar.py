@@ -10,11 +10,12 @@ no settings.yaml; com false, ele e simulado e avisado na tela.
 import sys
 
 from sora_shield.capture.contador import ContadorTentativas
-from sora_shield.capture.sniffer import Sniffer
+from sora_shield.capture.sniffer import CapturaFalhou, InterfaceInvalida, Sniffer
 from sora_shield.firewall.blocker import Bloqueador
 from sora_shield.logging.event_logger import RelatorioTentativas
 from sora_shield.ui.terminal import Terminal
 from sora_shield.utils.config import load_config
+from sora_shield.utils.privilegios import aviso_de_privilegio
 
 
 def main():
@@ -58,6 +59,22 @@ def main():
         relatorio.registrar_evento(evento)
         contador.registrar(evento)
 
+    aviso = aviso_de_privilegio()
+    if aviso:
+        for linha in aviso.splitlines():
+            tela.erro(linha)
+
+    orfas = bloqueador.regras_orfas()
+    if orfas:
+        tela.erro(
+            f"ATENCAO: {len(orfas)} regra(s) de bloqueio sobraram de uma "
+            f"execucao anterior: {', '.join(orfas)}"
+        )
+        tela.erro(
+            "Esses IPs ja comecam bloqueados e nao vao conseguir conectar. "
+            "Para remover: mingw32-make limpar"
+        )
+
     modo = "real" if bloqueador.ativo else "simulado"
     tela.info(f"Monitorando {interface!r}, portas {portas}")
     tela.info(f"Limite {limite} tentativas, bloqueio {modo}, "
@@ -67,6 +84,13 @@ def main():
     sniffer = Sniffer(interface, portas, ao_evento=ao_evento)
     try:
         sniffer.iniciar()
+    except (InterfaceInvalida, CapturaFalhou) as erro:
+        # Erro de configuracao do ambiente, nao defeito: mostra o que
+        # fazer, sem traceback.
+        for linha in str(erro).splitlines():
+            tela.erro(linha)
+        relatorio.fechar()
+        return 1
     except KeyboardInterrupt:
         sniffer.parar()
 
@@ -79,11 +103,11 @@ def main():
 
     # As regras ficam no firewall de proposito, para o teste de timeout
     # depois de encerrar. Remova com:
-    #   python -m sora_shield.firewall.blocker limpar
+    #   mingw32-make limpar
     bloqueador.cancelar_temporizadores()
     if bloqueados and bloqueador.ativo:
         print("\nRegras de bloqueio mantidas. Para remover:")
-        print("  python -m sora_shield.firewall.blocker limpar")
+        print("  mingw32-make limpar")
     return 0
 
 

@@ -65,7 +65,13 @@ class FirewallWindows:
             # A linha vem traduzida ("Rule Name:" / "Nome da Regra:"),
             # entao procura so o prefixo, que e nosso.
             if PREFIXO_REGRA in linha:
-                ips.append(linha.split(PREFIXO_REGRA, 1)[1].strip())
+                sufixo = linha.split(PREFIXO_REGRA, 1)[1].strip()
+                # So as regras de bloqueio terminam com um IP. Outras
+                # regras do projeto, como a SoraShield_iscas que libera
+                # as portas isca, nao devem entrar nesta lista: quem
+                # chama usa ela para remover.
+                if _ip_valido(sufixo):
+                    ips.append(sufixo)
         return ips
 
 
@@ -93,7 +99,11 @@ class FirewallLinux:
         ips = []
         for linha in resultado.stdout.splitlines():
             if PREFIXO_REGRA in linha:
-                ips.append(linha.split(PREFIXO_REGRA, 1)[1].split()[0].strip('"'))
+                sufixo = linha.split(PREFIXO_REGRA, 1)[1].split()[0].strip('"')
+                # Mesmo cuidado da versao Windows: so os bloqueios
+                # terminam com um IP.
+                if _ip_valido(sufixo):
+                    ips.append(sufixo)
         return ips
 
 
@@ -146,6 +156,18 @@ class Bloqueador:
     def esta_bloqueado(self, ip) -> bool:
         with self._lock:
             return ip in self._bloqueados
+
+    def regras_orfas(self) -> list[str]:
+        """IPs com regra no firewall que nao foram bloqueados aqui.
+
+        As regras sobrevivem ao encerramento de proposito, para dar para
+        mostrar o timeout depois. O efeito colateral e que uma regra
+        esquecida deixa o IP bloqueado na sessao seguinte, sem ninguem
+        perceber. Quem sobe o sistema deve chamar isto e avisar.
+        """
+        if not self.ativo:
+            return []
+        return [ip for ip in self.firewall.listar() if not self.esta_bloqueado(ip)]
 
     def bloquear(self, ip, tentativas=None) -> bool:
         """Cria a regra para o IP. Devolve True se o IP ficou bloqueado.

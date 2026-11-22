@@ -11,11 +11,18 @@ import argparse
 import socket
 import sys
 import threading
+import time
 
 
 def escutar(porta, endereco, parada):
     servidor = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    servidor.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    # Mesmo motivo do listener de verdade: no Windows o SO_REUSEADDR
+    # deixaria outro programa dividir a porta, e as conexoes iriam para
+    # um dos dois sem aviso.
+    if hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
+        servidor.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+    else:
+        servidor.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     try:
         servidor.bind((endereco, porta))
     except OSError as erro:
@@ -57,13 +64,17 @@ def main():
         thread.start()
 
     print("Ctrl+C para encerrar")
+    # Esperar com sleep, e nao com thread.join(), porque no Windows o
+    # Ctrl+C nao interrompe um join de forma confiavel.
     try:
         while any(thread.is_alive() for thread in threads):
-            for thread in threads:
-                thread.join(timeout=0.5)
+            time.sleep(0.2)
     except KeyboardInterrupt:
-        parada.set()
         print("\nencerrando...")
+    finally:
+        parada.set()
+        for thread in threads:
+            thread.join(timeout=2)
     return 0
 
 
