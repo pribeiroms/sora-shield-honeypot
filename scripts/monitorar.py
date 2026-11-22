@@ -10,7 +10,7 @@ no settings.yaml; com false, ele e simulado e avisado na tela.
 import sys
 
 from sora_shield.capture.contador import ContadorTentativas
-from sora_shield.capture.sniffer import Sniffer
+from sora_shield.capture.sniffer import CapturaFalhou, InterfaceInvalida, Sniffer
 from sora_shield.firewall.blocker import Bloqueador
 from sora_shield.logging.event_logger import RelatorioTentativas
 from sora_shield.ui.terminal import Terminal
@@ -78,6 +78,13 @@ def main():
     sniffer = Sniffer(interface, portas, ao_evento=ao_evento)
     try:
         sniffer.iniciar()
+    except (InterfaceInvalida, CapturaFalhou) as erro:
+        # Erro de configuracao do ambiente, nao defeito: mostra o que
+        # fazer, sem traceback.
+        for linha in str(erro).splitlines():
+            tela.erro(linha)
+        relatorio.fechar()
+        return 1
     except KeyboardInterrupt:
         sniffer.parar()
 
@@ -90,11 +97,11 @@ def main():
 
     # As regras ficam no firewall de proposito, para o teste de timeout
     # depois de encerrar. Remova com:
-    #   python -m sora_shield.firewall.blocker limpar
+    #   mingw32-make limpar
     bloqueador.cancelar_temporizadores()
     if bloqueados and bloqueador.ativo:
         print("\nRegras de bloqueio mantidas. Para remover:")
-        print("  python -m sora_shield.firewall.blocker limpar")
+        print("  mingw32-make limpar")
     return 0
 
 
