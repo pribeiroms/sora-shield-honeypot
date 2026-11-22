@@ -12,7 +12,7 @@ PORTAS ?= 21,23,3389
 TENTATIVAS ?= 6
 
 .DEFAULT_GOAL := ajuda
-.PHONY: ajuda escutar monitorar atacar limpar teste
+.PHONY: ajuda escutar monitorar atacar listar desbloquear limpar teste
 
 ajuda:
 	@echo Alvos disponiveis:
@@ -20,7 +20,9 @@ ajuda:
 	@echo   escutar      listeners de teste nas portas isca
 	@echo   monitorar    sniffer com contagem de tentativas por IP
 	@echo   atacar       dispara tentativas de conexao
-	@echo   limpar       remove as regras de firewall do projeto
+	@echo   listar       mostra os IPs bloqueados no firewall
+	@echo   desbloquear  remove o bloqueio de um IP (IP=...)
+	@echo   limpar       remove as regras de bloqueio do projeto
 	@echo   teste        roda a suite do pytest
 	@echo.
 	@echo Variaveis: HOST=$(HOST) PORTAS=$(PORTAS) TENTATIVAS=$(TENTATIVAS)
@@ -33,6 +35,12 @@ monitorar:
 
 atacar:
 	$(PYTHON) scripts/atacar.py --host $(HOST) --portas $(PORTAS) --tentativas $(TENTATIVAS)
+
+listar:
+	set PYTHONPATH=src && $(PYTHON) -m sora_shield.firewall.blocker listar
+
+desbloquear:
+	set PYTHONPATH=src && $(PYTHON) -m sora_shield.firewall.blocker desbloquear $(IP)
 
 limpar:
 	set PYTHONPATH=src && $(PYTHON) -m sora_shield.firewall.blocker limpar
