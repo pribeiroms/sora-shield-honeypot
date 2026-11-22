@@ -93,21 +93,24 @@ Conferir:
 
     Get-NetFirewallRule -DisplayName "SoraShield_iscas" | Get-NetFirewallPortFilter
 
-## 5. Teste de conexão
+## 5. Teste do Telnet falso e captura de credenciais
 
-Janela 1 do notebook, **como administrador** — listener na porta 23:
+Na máquina B, configure `capture.interface` em `config/settings.yaml` para a
+interface usada pela rede (por exemplo, `Wi-Fi` no Windows), abra o PowerShell
+**como administrador** e inicie o Sora Shield:
 
-    $l = New-Object System.Net.Sockets.TcpListener([System.Net.IPAddress]::Any, 23)
-    $l.Start(); "ouvindo na 23"
-    while($true){ $c=$l.AcceptTcpClient(); "conexao de " + $c.Client.RemoteEndPoint; $c.Close() }
+    $env:PYTHONPATH = "src"
+    python -m sora_shield
 
-Na VM:
+Na máquina A, conecte ao IP da máquina B e informe credenciais fictícias:
 
     telnet <IP-DO-HONEYPOT> 23
 
-**Esperado:** `Connected to <IP>` na VM, e `conexao de <IP-DA-VM>:porta`
-no listener. O `Connection closed by foreign host` logo em seguida é
-normal: o listener de teste fecha a conexão assim que registra a origem.
+O serviço solicita `login:` e `password:`. No terminal de B devem aparecer as
+credenciais recebidas pelo listener e os dados `Raw` capturados pelo Scapy,
+com os comandos IAC removidos. No Wireshark, capture na mesma interface com o
+filtro `tcp.port == 23`; siga o fluxo TCP para conferir os dados enviados pelo
+cliente. Telnet não criptografa o tráfego, então use somente credenciais falsas.
 
 Para sair do telnet: `Ctrl + ]` e depois `quit`.
 

@@ -1,6 +1,7 @@
 import threading
 
 from sora_shield.honeypot.listener import start_listeners
+from sora_shield.capture.sniffer import start_capture
 from sora_shield.utils.config import load_config
 
 
@@ -10,6 +11,8 @@ def main():
     print(f"Portas isca: {config['honeypot']['ports']}")
     honeypot = config["honeypot"]
     stop_event = threading.Event()
+    capture = config.get("capture", {})
+    capture_thread = start_capture(capture.get("interface", "eth0"), stop_event)
     threads = start_listeners(
         ports=honeypot["ports"],
         bind_address=honeypot.get("bind_address", "0.0.0.0"),
@@ -19,6 +22,7 @@ def main():
     try:
         for thread in threads:
             thread.join()
+        capture_thread.join(timeout=2)
     except KeyboardInterrupt:
         stop_event.set()
         for thread in threads:
