@@ -3,39 +3,22 @@
 import socket
 import threading
 
-
 BANNERS = {
-    21: b"220 ProFTPD 1.3.5 Server ready\r\n",
+    21: b"220 Sora Shield FTP Server ready\r\n",
     23: b"Sora Shield Telnet service\r\nlogin: ",
     3389: b"Sora Shield Remote Desktop service\r\n",
 }
 DEFAULT_BANNER = b"Sora Shield service ready\r\n"
 
+# Teto de conexoes sendo atendidas ao mesmo tempo, somando todas as
+# portas. Cada conexao segura uma thread ate o timeout, e uma varredura
+# de portas abre muitas de uma vez: sem teto, o numero de threads cresce
+# com o ataque.
+MAX_CONEXOES_SIMULTANEAS = 50
 
-def _serve_connection(client: socket.socket, address, port: int, timeout: float) -> None:
-    """Serve a small fake service and record Telnet credentials when requested."""
-    with client:
-        client.settimeout(timeout)
-        try:
-            client.sendall(BANNERS.get(port, DEFAULT_BANNER))
-            if port == 23:
-                username = _read_line(client)
-                if username is None:
-                    return
-                client.sendall(b"password: ")
-                password = _read_line(client)
-                if password is None:
-                    return
-                print(
-                    f"Credenciais Telnet de {address[0]}:{address[1]} "
-                    f"| usuario={username} | senha={password}",
-                    flush=True,
-                )
-            else:
-                client.recv(4096)
-        except (ConnectionError, OSError, socket.timeout):
-            pass
 
+def _avisar_erro(port: int, mensagem: str) -> None:
+    print(f"Listener da porta {port}: {mensagem}")
 
 def _read_line(client: socket.socket) -> str | None:
     """Read one Telnet text line, ignoring IAC negotiation and control bytes."""
@@ -62,11 +45,78 @@ def _read_line(client: socket.socket) -> str | None:
     return data.decode("utf-8", errors="replace").strip()
 
 
-def _listen(port: int, bind_address: str, timeout: float,
-            stop_event: threading.Event) -> None:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server:
+def _reservar_porta(server: socket.socket) -> None:
+    """Garante que a porta nao sera dividida com outro programa.
+
+    No Windows, `SO_REUSEADDR` permite que um segundo processo se amarre
+    numa porta que outro ja esta usando, e qual dos dois recebe cada
+    conexao fica indefinido: um `escutar.py` esquecido de um ensaio
+    anterior rouba as conexoes do honeypot em silencio. O
+    `SO_EXCLUSIVEADDRUSE`, que so existe la, reserva a porta de verdade
+    e faz a segunda tentativa falhar na hora.
+
+    No Linux o `SO_REUSEADDR` nao tem esse efeito: ele so libera portas
+    em TIME_WAIT, que e justamente o que se quer ao reiniciar.
+    """
+    if hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
+        server.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+    else:
         server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+
+
+def _serve_connection(client: socket.socket, address, port: int,
+                      timeout: float, vagas: threading.Semaphore) -> None:
+    """Envia o banner e, no Telnet, captura usuario e senha."""
+    try:
+        with client:
+            client.settimeout(timeout)
+            try:
+                client.sendall(BANNERS.get(port, DEFAULT_BANNER))
+                if port == 23:
+                    usuario = _read_line(client)
+                    if usuario is None:
+                        return
+                    client.sendall(b"password: ")
+                    senha = _read_line(client)
+                    if senha is None:
+                        return
+                    print(
+                        f"Credenciais Telnet de {address[0]}:{address[1]} "
+                        f"| usuario={usuario} | senha={senha}",
+                        flush=True,
+                    )
+                else:
+                    client.recv(4096)
+            except OSError:
+                # Cliente desconectou no meio, estourou o tempo ou a
+                # conexao caiu. E o comportamento normal de quem so
+                # varre portas, nao um defeito: a conexao morre aqui
+                # sem afetar o listener.
+                pass
+    finally:
+        vagas.release()
+
+
+def _listen(port: int, bind_address: str, timeout: float,
+            stop_event: threading.Event, vagas: threading.Semaphore,
+            ao_erro=_avisar_erro) -> None:
+    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        _reservar_porta(server)
         server.bind((bind_address, port))
+    except OSError as erro:
+        # Sem este tratamento a thread morreria com um traceback e a
+        # porta sumiria em silencio, com o resto do sistema parecendo
+        # normal.
+        server.close()
+        ao_erro(
+            port,
+            f"nao foi possivel abrir ({erro}). Veja quem esta usando com: "
+            f"Get-NetTCPConnection -LocalPort {port} -State Listen",
+        )
+        return
+
+    with server:
         server.listen()
         server.settimeout(1.0)
         print(f"Listener TCP ativo em {bind_address}:{port}")
@@ -76,25 +126,45 @@ def _listen(port: int, bind_address: str, timeout: float,
                 client, address = server.accept()
             except socket.timeout:
                 continue
+            except OSError:
+                break
+
+            if not vagas.acquire(blocking=False):
+                # Melhor recusar na hora do que acumular threads: o
+                # invasor ve a conexao fechar, e o sniffer registra a
+                # tentativa de qualquer forma.
+                client.close()
+                ao_erro(
+                    port,
+                    f"conexao de {address[0]} recusada: "
+                    f"{MAX_CONEXOES_SIMULTANEAS} conexoes simultaneas em uso",
+                )
+                continue
+
             threading.Thread(
                 target=_serve_connection,
-                args=(client, address, port, timeout),
+                args=(client, address, port, timeout, vagas),
+                name=f"honeypot-conn-{address[0]}-{address[1]}",
                 daemon=True,
             ).start()
 
 
 def start_listeners(ports: list[int], bind_address: str = "0.0.0.0",
                     connection_timeout_seconds: float = 10.0,
-                    stop_event: threading.Event | None = None) -> list[threading.Thread]:
+                    stop_event: threading.Event | None = None,
+                    max_conexoes: int = MAX_CONEXOES_SIMULTANEAS,
+                    ao_erro=_avisar_erro) -> list[threading.Thread]:
     """Start one TCP listening thread for every configured port."""
     if stop_event is None:
         stop_event = threading.Event()
 
+    vagas = threading.Semaphore(max_conexoes)
     threads = []
     for port in ports:
         thread = threading.Thread(
             target=_listen,
-            args=(int(port), bind_address, connection_timeout_seconds, stop_event),
+            args=(int(port), bind_address, connection_timeout_seconds,
+                  stop_event, vagas, ao_erro),
             name=f"honeypot-listener-{port}",
             daemon=True,
         )
