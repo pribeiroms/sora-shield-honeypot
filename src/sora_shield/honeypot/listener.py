@@ -20,6 +20,30 @@ MAX_CONEXOES_SIMULTANEAS = 50
 def _avisar_erro(port: int, mensagem: str) -> None:
     print(f"Listener da porta {port}: {mensagem}")
 
+def _read_line(client: socket.socket) -> str | None:
+    """Read one Telnet text line, ignoring IAC negotiation and control bytes."""
+    data = bytearray()
+    while len(data) < 4096:
+        chunk = client.recv(1)
+        if not chunk:
+            return None
+        value = chunk[0]
+        if value == 255:  # IAC: skip the command and its option byte.
+            command = client.recv(1)
+            if not command:
+                return None
+            if command[0] in (251, 252, 253, 254):  # WILL/WONT/DO/DONT
+                if not client.recv(1):
+                    return None
+            continue
+        if value in (10, 13):
+            if data:
+                return data.decode("utf-8", errors="replace").strip()
+            continue
+        if value >= 32 and value != 127:
+            data.append(value)
+    return data.decode("utf-8", errors="replace").strip()
+
 
 def _reservar_porta(server: socket.socket) -> None:
     """Garante que a porta nao sera dividida com outro programa.
@@ -42,20 +66,27 @@ def _reservar_porta(server: socket.socket) -> None:
 
 def _serve_connection(client: socket.socket, address, port: int,
                       timeout: float, vagas: threading.Semaphore) -> None:
-    """Send the configured service banner and keep the connection briefly open.
-
-    `address` ainda nao e usado aqui: fica para a issue #7, que vai
-    atribuir as credenciais capturadas ao IP de origem.
-    """
+    """Envia o banner e, no Telnet, captura usuario e senha."""
     try:
         with client:
             client.settimeout(timeout)
             try:
                 client.sendall(BANNERS.get(port, DEFAULT_BANNER))
-                # Read client data so clients can send a request without
-                # resetting the connection immediately. Credential capture
-                # is handled by a later issue.
-                client.recv(4096)
+                if port == 23:
+                    usuario = _read_line(client)
+                    if usuario is None:
+                        return
+                    client.sendall(b"password: ")
+                    senha = _read_line(client)
+                    if senha is None:
+                        return
+                    print(
+                        f"Credenciais Telnet de {address[0]}:{address[1]} "
+                        f"| usuario={usuario} | senha={senha}",
+                        flush=True,
+                    )
+                else:
+                    client.recv(4096)
             except OSError:
                 # Cliente desconectou no meio, estourou o tempo ou a
                 # conexao caiu. E o comportamento normal de quem so
