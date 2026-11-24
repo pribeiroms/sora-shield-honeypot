@@ -5,14 +5,12 @@ Sobe todos os modulos ao mesmo tempo:
 - um listener por porta isca, cada um na sua thread;
 - o sniffer numa thread propria, sem travar os listeners;
 - contagem de tentativas por IP ligada ao bloqueio no firewall;
-- interface no terminal e relatorio em CSV recebendo os eventos.
+- interface no terminal e relatorio em CSV recebendo os eventos,
+  inclusive as credenciais digitadas no Telnet falso.
 
 O `Ctrl+C` para tudo de uma vez: um unico `stop_event` e compartilhado
 pelos listeners e pelo sniffer. Ao encerrar, mostra a situacao por IP e
 o resumo do relatorio.
-
-A captura de credenciais do Telnet (issue #7, PR #22) ainda nao esta
-ligada ao relatorio: isso entra quando o PR for integrado.
 """
 
 import sys
@@ -94,6 +92,13 @@ def main():
         relatorio.registrar_evento(evento)
         contador.registrar(evento)
 
+    def ao_credencial(ip, porta_origem, porta_isca, usuario, senha):
+        # Elemento 4: a senha digitada na isca vai para a tela e para o
+        # relatorio, que e o que o professor pede ver no final.
+        tela.credencial(ip, porta_isca, usuario, senha)
+        relatorio.registrar_credencial(ip, porta_origem, porta_isca,
+                                       usuario, senha)
+
     aviso = aviso_de_privilegio()
     if aviso:
         for linha in aviso.splitlines():
@@ -123,6 +128,8 @@ def main():
         connection_timeout_seconds=honeypot.get("connection_timeout_seconds", 10),
         stop_event=stop_event,
         ao_erro=lambda porta, msg: tela.erro(f"listener da porta {porta}: {msg}"),
+        ao_subir=lambda porta, msg: tela.info(msg),
+        ao_credencial=ao_credencial,
     )
 
     sniffer = Sniffer(interface, portas, ao_evento=ao_evento,
