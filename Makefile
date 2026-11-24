@@ -12,11 +12,12 @@ PORTAS ?= 21,23,3389
 TENTATIVAS ?= 6
 
 .DEFAULT_GOAL := ajuda
-.PHONY: ajuda escutar monitorar atacar listar desbloquear limpar teste
+.PHONY: ajuda rodar escutar monitorar atacar listar desbloquear limpar teste
 
 ajuda:
 	@echo Alvos disponiveis:
 	@echo.
+	@echo   rodar        sobe o Sora Shield completo (listeners, sniffer, firewall)
 	@echo   escutar      listeners de teste nas portas isca
 	@echo   monitorar    sniffer com contagem de tentativas por IP
 	@echo   atacar       dispara tentativas de conexao
@@ -26,6 +27,9 @@ ajuda:
 	@echo   teste        roda a suite do pytest
 	@echo.
 	@echo Variaveis: HOST=$(HOST) PORTAS=$(PORTAS) TENTATIVAS=$(TENTATIVAS)
+
+rodar:
+	set PYTHONPATH=src && $(PYTHON) -m sora_shield
 
 escutar:
 	$(PYTHON) scripts/escutar.py --portas $(PORTAS)
