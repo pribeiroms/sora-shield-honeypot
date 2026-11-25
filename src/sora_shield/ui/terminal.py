@@ -96,6 +96,11 @@ class Terminal:
         )
         self._linha(MAGENTA + NEGRITO, "LOGIN", self._cor(MAGENTA, texto))
 
+    def payload(self, ip, porta_isca, texto) -> None:
+        """Texto lido direto da rede pelo sniffer, nao pelo socket."""
+        corpo = f"texto em claro na rede, de {ip} para a porta {porta_isca}: {texto!r}"
+        self._linha(AZUL, "PAYLOAD", self._cor(AZUL, corpo))
+
     def limite_atingido(self, ip, tentativas) -> None:
         self._linha(VERMELHO, "LIMITE", f"{ip} chegou a {tentativas} tentativas")
 
