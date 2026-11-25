@@ -92,6 +92,12 @@ def main():
         relatorio.registrar_evento(evento)
         contador.registrar(evento)
 
+    def ao_payload(evento):
+        # O mesmo texto que o listener recebeu pelo socket, agora lido
+        # dos bytes que passaram na rede: e assim que se mostra que o
+        # Telnet nao tem cifragem nenhuma.
+        tela.payload(evento.ip_origem, evento.porta_isca, evento.texto)
+
     def ao_credencial(ip, porta_origem, porta_isca, usuario, senha):
         # Elemento 4: a senha digitada na isca vai para a tela e para o
         # relatorio, que e o que o professor pede ver no final.
@@ -133,7 +139,7 @@ def main():
     )
 
     sniffer = Sniffer(interface, portas, ao_evento=ao_evento,
-                      evento_parada=stop_event)
+                      evento_parada=stop_event, ao_payload=ao_payload)
     falha_sniffer = []
     thread_sniffer = threading.Thread(
         target=_rodar_sniffer,
