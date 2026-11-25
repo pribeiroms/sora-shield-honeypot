@@ -179,6 +179,10 @@ class Bloqueador:
             self.ao_erro(ip, "endereco IP invalido")
             return False
         if ip in self.whitelist:
+            # Sem este aviso o limite e atingido, nada acontece, e quem
+            # esta olhando acha que o bloqueio falhou. Acontece sempre
+            # que o teste e feito de 127.0.0.1, que vem na whitelist.
+            self.ao_erro(ip, "nao bloqueado: esta na whitelist do settings.yaml")
             return False
 
         with self._lock:
