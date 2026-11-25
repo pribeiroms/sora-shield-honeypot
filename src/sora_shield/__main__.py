@@ -68,7 +68,11 @@ def main():
         # estouraria o limite de novo.
         contador.zerar(ip)
         tela.desbloqueio(ip, simulado)
-        tela.status(contador.invasores(), bloqueador.bloqueados())
+        # Sem a tabela de status aqui: o IP acabou de ser zerado, entao
+        # ela sairia dizendo "nenhum IP com tentativas" logo depois
+        # de todo mundo ter visto cinco tentativas e um bloqueio.
+        tela.info(f"contagem de {ip} zerada: sao precisas mais {limite} "
+                  f"tentativas para bloquear de novo")
 
     def ao_bloquear(ip, tentativas, simulado):
         tela.bloqueio(ip, tentativas, simulado)
@@ -127,6 +131,8 @@ def main():
     tela.info(f"Limite {limite} tentativas, bloqueio {modo}, "
               f"duracao {bloqueador.duracao_minutos} min")
 
+    tela.info("Ctrl+C para encerrar")
+
     stop_event = threading.Event()
     listeners = start_listeners(
         ports=portas,
@@ -148,7 +154,6 @@ def main():
         daemon=True,
     )
     thread_sniffer.start()
-    tela.info("Ctrl+C para encerrar")
 
     try:
         while not stop_event.is_set():
@@ -172,7 +177,10 @@ def main():
         return 1
 
     bloqueados = bloqueador.bloqueados()
-    print("\nSituacao final por IP:")
+    # Dois numeros diferentes para o mesmo IP, de proposito: o contador
+    # zera a cada desbloqueio, o relatorio nunca zera. Sem os rotulos
+    # parece defeito.
+    print("\nContagem atual por IP (zera a cada desbloqueio):")
     tela.status(contador.invasores(), bloqueados)
     print()
     print(relatorio.texto_resumo(bloqueados))

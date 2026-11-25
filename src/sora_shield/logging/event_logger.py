@@ -115,7 +115,10 @@ class RelatorioTentativas:
         if not resumo:
             return "Nenhuma tentativa de acesso registrada."
 
-        linhas = [f"Tentativas de acesso ({len(resumo)} IPs):"]
+        linhas = [
+            f"Total registrado no relatorio, desde o inicio desta "
+            f"execucao ({len(resumo)} IPs):"
+        ]
         for ip in sorted(resumo):
             dados = resumo[ip]
             portas = ", ".join(str(p) for p in sorted(dados["portas"]))

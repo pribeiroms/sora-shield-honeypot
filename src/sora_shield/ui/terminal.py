@@ -122,7 +122,7 @@ class Terminal:
         """
         if not invasores:
             with self._lock:
-                print(self._cor(CINZA, "  (nenhuma tentativa ate agora)"),
+                print(self._cor(CINZA, "  (nenhum IP com tentativas em aberto)"),
                       file=self.saida, flush=True)
             return
 
