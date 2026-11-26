@@ -77,7 +77,12 @@ def test_whitelist_nunca_bloqueia():
     bloqueador, firewall, eventos = novo(ativo=True, whitelist=["127.0.0.1"])
     assert not bloqueador.bloquear("127.0.0.1")
     assert firewall.regras == set()
-    assert eventos == []
+    # Avisa em vez de recusar calado: quem testa de 127.0.0.1, que vem
+    # na whitelist, via o limite ser atingido e nada acontecer depois.
+    assert eventos == [
+        ("erro", "127.0.0.1",
+         "nao bloqueado: esta na whitelist do settings.yaml"),
+    ]
 
 
 def test_ip_invalido_nao_chega_ao_firewall():

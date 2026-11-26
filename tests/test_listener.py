@@ -157,3 +157,104 @@ def test_dois_listeners_na_mesma_porta_nao_dividem():
         assert b"Sora Shield" in conectar(porta)
     finally:
         primeira.set()
+
+# --- captura de credenciais no Telnet falso (elemento 4) ---
+
+def esperar_porta_livre(porta, limite=5.0):
+    """Espera o listener anterior soltar a porta.
+
+    O laco do `_listen` so repara no pedido de parada quando o `accept`
+    estoura, ate um segundo depois. E com `SO_EXCLUSIVEADDRUSE` o
+    listener seguinte nao consegue dividir a porta: ele falha na hora.
+    """
+    fim = time.monotonic() + limite
+    while time.monotonic() < fim:
+        try:
+            with socket.socket() as s:
+                s.bind((LOCAL, porta))
+            return
+        except OSError:
+            time.sleep(0.1)
+
+
+def credenciais_de(porta, payload, tempo=1.0):
+    """Conecta na isca, manda `payload` e devolve o que o listener capturou."""
+    capturadas = []
+    esperar_porta_livre(porta)
+    parada, _ = subir(
+        [porta],
+        ao_credencial=lambda *args: capturadas.append(args),
+    )
+    try:
+        cliente = socket.create_connection((LOCAL, porta), timeout=tempo)
+        cliente.settimeout(tempo)
+        try:
+            cliente.recv(1024)          # banner com o "login: "
+            cliente.sendall(payload)
+            time.sleep(0.4)
+        finally:
+            cliente.close()
+    finally:
+        parada.set()
+        esperar_porta_livre(porta)
+    return capturadas
+
+
+def test_captura_usuario_e_senha_do_telnet():
+    # A porta 23 e a unica que pede login; o teste usa uma porta alta
+    # para nao precisar de privilegio, entao o listener so entra nesse
+    # caminho quando a porta e mesmo a 23.
+    capturadas = credenciais_de(23, b"admin\r\nsenha123\r\n")
+    assert len(capturadas) == 1
+    ip, _porta_origem, porta_isca, usuario, senha = capturadas[0]
+    assert (ip, porta_isca, usuario, senha) == (LOCAL, 23, "admin", "senha123")
+
+
+def test_negociacao_iac_nao_entra_no_usuario():
+    # IAC WILL NAWS + IAC DO ECHO antes do texto, como manda um cliente
+    # Telnet de verdade ao abrir a conexao.
+    capturadas = credenciais_de(23, b"\xff\xfb\x18\xff\xfd\x01root\r\ntoor\r\n")
+    assert [c[3:] for c in capturadas] == [("root", "toor")]
+
+
+def test_subnegociacao_iac_nao_entra_no_usuario():
+    # IAC SB NAWS 80 24 IAC SE: o 80 e o byte 0x50, que e o 'P'
+    # imprimivel. Sem consumir ate o IAC SE, o usuario saia 'Padmin'.
+    capturadas = credenciais_de(
+        23, b"\xff\xfa\x1f\x00\x50\x00\x18\xff\xf0admin\r\n1234\r\n"
+    )
+    assert [c[3:] for c in capturadas] == [("admin", "1234")]
+
+
+def test_desconectar_antes_da_senha_nao_registra_nada():
+    capturadas = credenciais_de(23, b"meio\r\n")
+    assert capturadas == []
+
+
+def test_prazo_estourado_nao_registra_credencial_vazia():
+    # Byte de controle nao vira texto, entao sem prazo o listener ficaria
+    # preso; e devolver o pedaco acumulado registraria usuario e senha
+    # vazios no relatorio.
+    capturadas = []
+    esperar_porta_livre(23)
+    parada, _ = subir(
+        [23],
+        ao_credencial=lambda *args: capturadas.append(args),
+    )
+    try:
+        cliente = socket.create_connection((LOCAL, 23), timeout=3)
+        cliente.settimeout(3)
+        try:
+            cliente.recv(1024)
+            fim = time.monotonic() + 1.5
+            while time.monotonic() < fim:
+                cliente.sendall(b"\x00")
+                time.sleep(0.2)
+        except OSError:
+            pass            # o listener fecha a conexao ao estourar o prazo
+        finally:
+            cliente.close()
+    finally:
+        parada.set()
+        esperar_porta_livre(23)
+    assert capturadas == []

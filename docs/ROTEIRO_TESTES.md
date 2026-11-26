@@ -41,15 +41,22 @@ de Wi-Fi. Bridge **não serve**: sobre Wi-Fi o tráfego entre VM e host não
 chega ao Npcap, e o sniffer não captura nada. O `INSTALACAO.md` explica o
 porquê.
 
+Desde a integração da #14 o sistema inteiro sobe num comando só, numa
+janela só. Os scripts `escutar` e `monitorar` continuam no repositório
+para testar um módulo isolado durante o desenvolvimento, mas **não são
+usados na apresentação**.
+
 ## 1. Antes de começar
 
 - [ ] Notebook na tomada e configurado para **não suspender**. A VM trava
       com `soft lockup` se o host dormir.
 - [ ] VM com o adaptador em **host-only**, não em NAT nem em bridge.
-- [ ] `capture.interface` no `.env` apontando para o adaptador host-only.
+- [ ] `INTERFACE` no `.env` apontando para o adaptador host-only.
 - [ ] **Dropbox ou OneDrive pausado**, se o projeto estiver dentro de uma
       pasta sincronizada.
 - [ ] Ligar a VM pouco antes de usar, não horas antes.
+- [ ] Apagar `logs/tentativas.csv` se quiser mostrar o relatório limpo: o
+      arquivo acumula entre execuções, de propósito.
 
 Com host-only não importa se há Wi-Fi e cabo ligados ao mesmo tempo, nem se
 há VPN ativo: essa rede é isolada e não passa por nenhum dos dois.
@@ -71,11 +78,11 @@ python -c "import scapy; print(scapy.__version__)"
 ```
 
 ```powershell
-$env:PYTHONPATH = "src"; python -m sora_shield
+mingw32-make teste
 ```
 
-O último comando deve listar as portas isca. Se o `Activate.ps1` for
-barrado pela política de execução:
+**Esperado:** `51 passed`. Se o `Activate.ps1` for barrado pela política
+de execução:
 
 ```powershell
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy RemoteSigned
@@ -92,7 +99,13 @@ python -c "from scapy.all import show_interfaces; show_interfaces()"
 O honeypot é sempre **`192.168.56.1`** na rede host-only. Esse endereço é
 do adaptador virtual e não muda.
 
-O IP da VM vem do DHCP do VirtualBox e **muda entre sessões**. Na VM:
+O IP da VM vem do DHCP da rede host-only, que amarra o endereço ao MAC do
+adaptador da VM. Na prática ele **não tem mudado**: foi `192.168.56.101`
+em todas as sessões desde 20/11, com a VM desligada e religada várias
+vezes no meio. Ele muda se a VM for recriada com MAC novo, se a faixa do
+DHCP for alterada, ou se outra VM pegar o endereço antes. Confira mesmo
+assim, porque todo comando deste roteiro usa esse endereço e um erro aqui
+só aparece quando nada funciona. Na VM:
 
 ```sh
 ip a
@@ -119,148 +132,299 @@ Conferir:
 Get-NetFirewallRule -DisplayName "SoraShield_iscas" | Get-NetFirewallPortFilter
 ```
 
-## 5. Subir o honeypot
+## 5. Configuração do dia
 
-Duas janelas no notebook, **como administrador**, uma em cada.
+No `config/settings.yaml`, duas linhas precisam estar assim para a
+apresentação:
 
-Os serviços isca:
-
-```powershell
-mingw32-make escutar
+```yaml
+  enabled: true
 ```
 
-O sniffer com a contagem por IP, o bloqueio no firewall e o relatório:
-
-```powershell
-mingw32-make monitorar
+```yaml
+  block_duration_minutes: 1
 ```
 
-O cabeçalho do `monitorar` tem que mostrar o adaptador host-only. Se
-mostrar `Wi-Fi`, o `.env` está errado e nada vai ser capturado. Ele
-também diz se o bloqueio está `real` ou `simulado`: para os testes da
-seção 7, `firewall.enabled` precisa estar `true` no `settings.yaml`.
+O `enabled: true` faz o bloqueio criar regra de verdade no firewall; com
+`false` a linha de bloqueio sai marcada como `(simulado ...)` e nada é
+alterado. O `block_duration_minutes: 1` deixa o desbloqueio automático
+acontecer em um minuto, em vez dos 60 do padrão — sem isso não dá para
+mostrar o elemento 5 inteiro na frente da banca.
 
-## 6. Teste de captura e contagem
+Confira também o limite, que é o que dispara o bloqueio:
 
-Na VM, seis tentativas:
+```yaml
+  max_attempts: 5
+```
+
+## 6. Subir o Sora Shield
+
+Uma janela **como administrador**, na pasta do projeto, com a `.venv`
+ativa:
+
+```powershell
+mingw32-make rodar
+```
+
+**Esperado:**
+
+```text
+INFO       Sora Shield iniciado
+INFO       Monitorando 'VirtualBox Host-Only Ethernet Adapter', portas isca [21, 23, 3389]
+INFO       Limite 5 tentativas, bloqueio real, duracao 1 min
+INFO       Ctrl+C para encerrar
+INFO       Listener TCP ativo em 0.0.0.0:21
+INFO       Listener TCP ativo em 0.0.0.0:23
+INFO       Listener TCP ativo em 0.0.0.0:3389
+```
+
+Três coisas para conferir nesse cabeçalho antes de seguir: a interface
+tem que ser a host-only (se disser `Wi-Fi`, o `.env` está errado e nada
+será capturado), o bloqueio tem que estar `real` e a duração, `1 min`.
+
+Se aparecer aviso de privilégio, a janela não é de administrador: feche e
+abra outra. Se aparecer aviso de regras órfãs, sobrou bloqueio de um
+ensaio anterior — veja a seção 10.
+
+Deixe o **Wireshark** aberto ao lado, na interface host-only, com o
+filtro:
+
+```text
+tcp.port in {21, 23, 3389}
+```
+
+## 7. Elementos 1 a 4, numa conexão só
+
+O limite é de cinco tentativas, então cada conexão feita aqui gasta uma.
+Uma única conexão de Telnet mostra quatro dos cinco elementos, e sobra
+folga até o limite.
+
+Primeiro, o elemento 1, sem gastar conexão nenhuma. Numa segunda janela:
+
+```powershell
+netstat -an | findstr LISTENING | findstr ":21 :23 :3389"
+```
+
+**Esperado:** as três portas em `LISTENING`. São os sockets TCP abertos
+ao mesmo tempo, cada um na sua thread.
+
+Agora, na **VM**, uma conexão:
+
+```sh
+telnet 192.168.56.1 23
+```
+
+Digite `admin`, Enter, depois `senha123`, Enter.
+
+**Esperado na VM:** o banner falso, `login:` e `password:`. É o elemento
+1 pelo lado do atacante — ele acha que achou um serviço de verdade.
+
+**Esperado na janela do Sora Shield:**
+
+```text
+SYN        tentativa de conexao           192.168.56.x:NNNNN -> 192.168.56.1:23
+SYN-ACK    resposta da isca               192.168.56.1:23 -> 192.168.56.x:NNNNN
+ACK        conexao estabelecida           192.168.56.x:NNNNN -> 192.168.56.1:23
+PAYLOAD    texto em claro na rede, de 192.168.56.x para a porta 23: 'admin'
+PAYLOAD    texto em claro na rede, de 192.168.56.x para a porta 23: 'senha123'
+LOGIN      credencial capturada de 192.168.56.x na porta 23: usuario='admin' senha='senha123'
+```
+
+O que cada parte prova:
+
+- **Elemento 2**, captura em tempo real: as três etapas do handshake de
+  três vias, identificadas pelo sniffer enquanto acontecem. No Wireshark
+  ao lado, os mesmos três pacotes, com a mesma porta de origem. Portas
+  iguais nos dois lados é o que prova que são a mesma conexão.
+- **Elemento 3**, identificação do invasor: IP e portas de origem e de
+  destino em cada linha.
+- **Elemento 4**, registro do payload: as linhas `PAYLOAD` e `LOGIN`. As
+  duas mostram o mesmo texto, por caminhos diferentes — `PAYLOAD` é o que
+  o sniffer leu dos bytes que passaram na rede, `LOGIN` é o que o socket
+  da isca recebeu. É isso que mostra que o Telnet não tem cifragem: quem
+  estiver na rede lê a senha sem precisar ser o servidor.
+
+No **Wireshark**, clique com o botão direito num pacote da conexão e
+escolha **Follow → TCP Stream**. **Esperado:** `admin` e `senha123`
+legíveis. É a terceira fonte mostrando a mesma senha.
+
+A ordem entre `PAYLOAD` e `LOGIN` pode variar: são threads diferentes
+lendo de fontes independentes, e às vezes o socket termina antes do
+Npcap entregar o pacote. Não é defeito.
+
+Saia do Telnet na VM e encerre o Sora Shield:
+
+```text
+Ctrl + C
+```
+
+**Esperado:**
+
+```text
+encerrando...
+
+Contagem atual por IP (zera a cada desbloqueio):
+  IP                 TENTATIVAS  PORTAS           SITUACAO
+  192.168.56.x                1  23               liberado
+
+Total registrado no relatorio, desde o inicio desta execucao (1 IPs):
+  192.168.56.x: 1 conexoes nas portas 23
+      usuario='admin' senha='senha123'
+Detalhes em logs/tentativas.csv
+```
+
+Essa é a segunda metade do elemento 4: o relatório de quem tentou e quais
+senhas foram testadas. Os dois números são rotulados de propósito — o
+primeiro é a contagem viva, que zera a cada desbloqueio; o segundo é o
+total gravado, que nunca zera.
+
+O detalhe fica em `logs/tentativas.csv` (caminho em
+`logging.report_file`), uma linha por tentativa e uma por credencial, com
+data e hora, IP, portas, usuário e senha. É gravado na hora, então
+continua lá mesmo se o programa cair. Abre direto no Excel:
+
+```powershell
+Get-Content logs\tentativas.csv
+```
+
+## 8. Elemento 5 — bloqueio automático
+
+Suba de novo, para a contagem começar do zero:
+
+```powershell
+mingw32-make rodar
+```
+
+Na **VM**, seis tentativas seguidas:
 
 ```sh
 for i in 1 2 3 4 5 6; do nc -w 2 192.168.56.1 23 < /dev/null; sleep 1; done
 ```
 
-**Esperado no `monitorar`:** para cada conexão, as três etapas do
-handshake (`SYN`, `SYN-ACK`, `ACK conexao estabelecida`), cada tipo numa
-cor, e logo após o quinto `SYN` as linhas:
+**Esperado:** as trincas do handshake, e logo depois do quinto `SYN`:
 
 ```text
 LIMITE     192.168.56.x chegou a 5 tentativas
 BLOQUEIO   192.168.56.x bloqueado no firewall apos 5 tentativas
+  IP                 TENTATIVAS  PORTAS           SITUACAO
+  192.168.56.x                5  23               bloqueado
 ```
 
-seguidas da tabela de status por IP, com o atacante como `bloqueado`.
+As mensagens saem **uma vez só**, por IP. A sexta conexão já esbarra no
+bloqueio: aparece só o `SYN`, sem `SYN-ACK` nem `ACK`, e na VM o `nc`
+desiste. A quinta pode completar ou não, conforme o `netsh` termine de
+criar a regra antes ou depois do `ACK` dela.
 
-O limite vem de `firewall.max_attempts`. As mensagens saem **uma vez
-só**. A sexta conexão já esbarra no bloqueio: no `monitorar` aparece só o
-`SYN`, e na VM o `nc` desiste. A quinta pode completar ou não, conforme o
-`netsh` termine de criar a regra antes ou depois do `ACK` dela.
+Ver o `SYN` mesmo com o IP bloqueado é o comportamento correto, e vale
+explicar: o Npcap captura **abaixo** do firewall, então o honeypot
+continua enxergando quem já baniu. O pacote chega na placa, o sniffer vê,
+e o Windows descarta antes de entregar ao listener.
 
-Com `firewall.enabled: false` o fluxo é o mesmo, mas a linha de bloqueio
-termina em `(simulado ...)` e o firewall não é alterado: as seis conexões
-completam.
-
-**Esperado no `escutar`:** as conexões que completaram, com as mesmas
-portas de origem que aparecem no `monitorar`. Portas iguais nas duas
-janelas é o que prova que ambos viram as mesmas conexões.
-
-## 7. Teste de bloqueio e desbloqueio
-
-Com o `monitorar` rodando e o atacante já bloqueado pela seção 6, na VM:
-
-```sh
-nc -w 3 192.168.56.1 23 < /dev/null; echo "saida: $?"
-```
-
-**Esperado:** `saida: 1`. No `monitorar` aparece só o `SYN`, sem
-`SYN-ACK` nem `ACK`. No `escutar`, nada.
-
-Ver o `SYN` mesmo com o IP bloqueado é o comportamento correto: o Npcap
-captura abaixo do firewall, então o honeypot continua enxergando quem já
-baniu.
-
-Conferir a regra criada, numa terceira janela **como administrador**:
+Confirme a regra, na segunda janela **como administrador**:
 
 ```powershell
 mingw32-make listar
 ```
 
-Desbloquear:
+Mostre que o acesso caiu, na **VM**:
 
-```powershell
-mingw32-make desbloquear IP=192.168.56.x
+```sh
+nc -w 3 192.168.56.1 23 < /dev/null; echo "saida: $?"
 ```
 
-> **Na apresentação, prefira o desbloqueio automático.** O `desbloquear`
-> roda num processo separado: ele remove a regra do firewall, mas não tem
-> como avisar o `monitorar` que está rodando. A tabela continua mostrando
-> o IP como bloqueado, a contagem dele não volta a zero e, por já ter
-> passado do limite uma vez, aquele IP não é bloqueado de novo naquela
-> execução. O desbloqueio por tempo não tem esse problema, porque
-> acontece dentro do mesmo processo. Use o comando manual para limpar
-> depois da sessão, não durante.
+**Esperado:** `saida: 1`, e na janela do Sora Shield só o `SYN`.
 
-E repita o `nc` na VM. **Esperado:** `saida: 0` e o handshake completo de
-volta no `monitorar`.
+Agora espere **um minuto** sem fazer nada. **Esperado:**
 
-O desbloqueio também acontece sozinho depois de
-`firewall.block_duration_minutes`. Para ver isso no ensaio sem esperar uma
-hora, use `1` no `settings.yaml`: um minuto depois do bloqueio sai a linha
-`LIBERADO 192.168.56.x desbloqueado` e a tabela de status volta a mostrar
-o IP como `liberado`, com a contagem zerada.
+```text
+LIBERADO   192.168.56.x desbloqueado
+INFO       contagem de 192.168.56.x zerada: sao precisas mais 5 tentativas para bloquear de novo
+```
+
+E na **VM**, de novo:
+
+```sh
+nc -w 3 192.168.56.1 23 < /dev/null; echo "saida: $?"
+```
+
+**Esperado:** `saida: 0` e o handshake completo de volta. Acesso
+restabelecido, elemento 5 fechado.
 
 O Windows avalia regras de bloqueio antes das de liberação, por isso a
 regra de bloqueio vence a `SoraShield_iscas` mesmo com a porta 23
 liberada.
 
-## 8. Relatório de tentativas
+> **Na apresentação, use o desbloqueio automático, não o manual.** O
+> `mingw32-make desbloquear` roda num processo separado: ele remove a
+> regra do firewall, mas não tem como avisar o Sora Shield que está
+> rodando. A tabela continua mostrando o IP como bloqueado, a contagem
+> dele não volta a zero e, por já ter passado do limite uma vez, aquele
+> IP não é bloqueado de novo naquela execução. O desbloqueio por tempo
+> não tem esse problema, porque acontece dentro do mesmo processo. Use o
+> comando manual para limpar depois da sessão, não durante.
 
-Encerre o `monitorar` com `Ctrl + C`. **Esperado:** a tabela final por IP
-e o resumo de tentativas, com `[BLOQUEADO]` ao lado de quem continuava
-bloqueado.
+Encerre com `Ctrl + C`. As regras de bloqueio **ficam** no firewall ao
+encerrar, de propósito, para dar para mostrar o timeout depois.
 
-O detalhe fica em `logs/tentativas.csv` (caminho em
-`logging.report_file`), uma linha por tentativa com data e hora, IP,
-portas, usuário e senha. Ele é gravado na hora de cada tentativa, então
-continua lá mesmo se o programa cair. Abre direto no Excel.
+## 9. Ensaio completo
 
-As regras de bloqueio **ficam** no firewall ao encerrar, para dar para
-mostrar o timeout depois. A seção 9 remove.
+O ensaio é rodar as seções 6, 7 e 8 inteiras, do começo ao fim, sem
+consultar este documento no meio. Faça **pelo menos duas vezes**, em dias
+diferentes: o ambiente só mostra o que falha quando é montado do zero
+mais de uma vez, com a VM desligada e o notebook reiniciado no meio.
 
-## 9. Limpeza
+Em cada ensaio, confira:
+
+- [ ] Tempo total do início da seção 6 até o fim da seção 8. Meta: menos
+      de dez minutos, com o minuto de espera do desbloqueio incluído.
+- [ ] Você soube dizer, em voz alta, o que cada linha da tela significa,
+      sem ler daqui.
+- [ ] O IP da VM foi conferido no começo com `ip a`, não presumido. Tem
+      sido sempre `192.168.56.101`, mas o dia em que mudar é o dia em que
+      todos os comandos param de funcionar sem explicação.
+- [ ] A limpeza da seção 10 foi feita no fim, e o ensaio seguinte começou
+      sem aviso de regra órfã.
+- [ ] Quem vai operar o teclado no dia foi quem operou no ensaio.
+
+Ensaio 1: data ____ / ____ — tempo ______ — problemas: ______________
+
+Ensaio 2: data ____ / ____ — tempo ______ — problemas: ______________
+
+A apresentação remota não se aplica: os três integrantes apresentam
+presencialmente, na mesma máquina.
+
+## 10. Limpeza
+
+Na segunda janela, **como administrador**:
 
 ```powershell
 mingw32-make limpar
 ```
 
-E `Ctrl + C` na janela do `escutar`.
-
 O `limpar` remove só as regras de bloqueio, cujo nome termina com um IP.
 A `SoraShield_iscas`, que libera a entrada nas portas isca, continua lá —
 se ela fosse removida, o teste seguinte não receberia conexão nenhuma.
 
-Se mesmo assim sobrar alguma regra, o `monitorar` avisa no início da
+Se mesmo assim sobrar alguma regra, o Sora Shield avisa no início da
 próxima execução, listando os IPs que já começam bloqueados.
+
+Para zerar o relatório antes de um ensaio ou da apresentação:
+
+```powershell
+Remove-Item logs\tentativas.csv
+```
 
 ## Checklist dos 5 elementos
 
-Ordem sugerida para o dia, com o que mostrar em cada um.
+Ordem do dia, com o que mostrar em cada um.
 
 | # | Elemento | Como provar | Situação |
 |---|---|---|---|
-| 1 | Serviços isca | `netstat -an \| findstr LISTENING` mostra 21, 23 e 3389; `telnet 192.168.56.1 23` da VM mostra o banner | Pronto |
-| 2 | Captura em tempo real | Seção 6, com o Wireshark ao lado no filtro `tcp.port in {21, 23, 3389}` e as mesmas portas de origem nos dois | Pronto |
-| 3 | Identificação do invasor | Seção 6: IP e portas de origem e destino em cada linha e a tabela de status com a contagem | Pronto |
-| 4 | Registro do payload | Telnet da VM digitando usuário e senha; aparecem na linha `LOGIN`, no CSV e no resumo | Aguarda a #7; o relatório já tem a coluna |
-| 5 | Bloqueio automático | Seções 6 e 7: bloqueio no limite, timeout, desbloqueio e acesso de volta | Pronto |
+| 1 | Serviços isca | Seção 7: `netstat` mostra 21, 23 e 3389 em `LISTENING`; o `telnet` da VM recebe o banner falso | Pronto |
+| 2 | Captura em tempo real | Seção 7: `SYN`, `SYN-ACK` e `ACK` na tela, com o Wireshark ao lado mostrando os mesmos pacotes e a mesma porta de origem | Pronto |
+| 3 | Identificação do invasor | Seção 7: IP e portas de origem e destino em cada linha; seção 8: a tabela de status com a contagem por IP | Pronto |
+| 4 | Registro do payload | Seção 7: linhas `PAYLOAD` e `LOGIN` com a senha em claro, o `Follow TCP Stream` do Wireshark, e o resumo com as credenciais ao encerrar | Pronto |
+| 5 | Bloqueio automático | Seção 8: bloqueio no limite, `SYN` sem resposta, desbloqueio por tempo e acesso de volta | Pronto |
 
 ## Plano B
 
@@ -269,14 +433,16 @@ Para cada problema, o que fazer **na hora**, sem depurar na frente da banca.
 | Se acontecer | Faça |
 |---|---|
 | IP da VM mudou | `ip a` na VM e use o novo. O honeypot continua `192.168.56.1`. |
-| `monitorar` não mostra nada | Interface trocou: `show_interfaces()`, corrija o `INTERFACE` do `.env` e suba de novo. |
+| Nenhum evento de rede aparece | Interface trocou: `show_interfaces()`, corrija o `INTERFACE` do `.env` e suba de novo. |
 | Linha de bloqueio termina em `(simulado ...)` | `firewall.enabled` está `false`. Troque para `true` e suba de novo. |
-| `ERRO firewall ... administrador` | A janela não é de administrador. Abra outra como administrador. |
+| Aviso de privilégio na subida | A janela não é de administrador. Abra outra como administrador. |
 | Bloqueio automático não funciona de jeito nenhum | Mostre o elemento 5 com os comandos manuais abaixo. |
 | A VM não conecta nem antes do bloqueio | Sobrou regra de um ensaio: `mingw32-make limpar`. Confira também a `SoraShield_iscas` da seção 4. |
-| `WinError 10048` ao subir o `escutar` | Porta ocupada: `Get-NetTCPConnection -LocalPort <porta> -State Listen`. |
-| VM travada | Reinicie a VM; o IP pode mudar. |
-| Sem Telnet na VM | Use `nc 192.168.56.1 23`, que se comporta igual para a demonstração. |
+| `WinError 10048` na subida | Porta ocupada por outro programa: a própria mensagem traz o `Get-NetTCPConnection` para descobrir quem. |
+| O bloqueio disparou antes da hora | Você gastou as cinco tentativas nos elementos 1 a 4. `Ctrl + C`, `mingw32-make limpar`, e suba de novo. |
+| VM travada | Reinicie a VM e confira o IP com `ip a` antes de seguir. |
+| Sem Telnet na VM | `apk add busybox-extras`. Para pressa, `nc 192.168.56.1 23` serve, mas aí digite usuário e senha na mão para o elemento 4. |
+| `mingw32-make` barrado pelo Windows | Use o comando direto: `$env:PYTHONPATH = "src"; python -m sora_shield` |
 
 Bloqueio e desbloqueio manuais, **como administrador**:
 
@@ -295,8 +461,8 @@ netsh advfirewall firewall delete rule name="SoraShield_192.168.56.x"
 | `ping` ao honeypot dá 100% de perda | O Windows não responde a ICMP por padrão | Normal. Teste com telnet, nunca com ping. |
 | VM mostra `soft lockup - CPU#N stuck` | O notebook suspendeu com a VM ligada | Reinicie a VM. Previna desativando a suspensão. |
 | VM com IP `169.254.x` | DHCP da rede host-only desligado | Arquivo → Ferramentas → Gerenciador de Rede, aba Redes Host-Only, marque o DHCP. |
-| `escutar` recebe conexões mas `monitorar` não mostra nada | VM em bridge, ou `.env` apontando para a placa errada | Adaptador da VM em host-only e `INTERFACE=VirtualBox Host-Only Ethernet Adapter`. |
-| O bloqueio não surte efeito | O teste foi contra `127.0.0.1` | O Windows não filtra loopback. O ataque precisa vir da VM. |
+| A conexão chega na isca mas nenhum evento de rede aparece | VM em bridge, ou `.env` apontando para a placa errada | Adaptador da VM em host-only e `INTERFACE=VirtualBox Host-Only Ethernet Adapter`. |
+| O bloqueio não surte efeito | O teste foi contra `127.0.0.1` | O Windows não filtra loopback, e o adaptador host-only não enxerga loopback. O ataque precisa vir da VM. |
+| `LIMITE` aparece e nada acontece depois | O IP está na `whitelist` do `settings.yaml` | O sistema avisa na linha seguinte. Tire o IP da lista. |
 | `Activate.ps1` barrado | Política de execução do PowerShell | `Set-ExecutionPolicy -Scope Process -ExecutionPolicy RemoteSigned` |
-| Scapy não captura nada | Interface errada ou falta de privilégio | Confira com `show_interfaces()` e rode como administrador. |
-| `WinError 10048` ao abrir uma porta | Porta já ocupada | `Get-NetTCPConnection -LocalPort <porta> -State Listen` mostra quem está nela. |
+| A captura de credenciais parou de funcionar | As portas isca foram mudadas no `settings.yaml` | O Telnet falso está amarrado à porta 23 no código. Mantenha 23 na lista. |

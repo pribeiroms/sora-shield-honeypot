@@ -5,14 +5,12 @@ Sobe todos os modulos ao mesmo tempo:
 - um listener por porta isca, cada um na sua thread;
 - o sniffer numa thread propria, sem travar os listeners;
 - contagem de tentativas por IP ligada ao bloqueio no firewall;
-- interface no terminal e relatorio em CSV recebendo os eventos.
+- interface no terminal e relatorio em CSV recebendo os eventos,
+  inclusive as credenciais digitadas no Telnet falso.
 
 O `Ctrl+C` para tudo de uma vez: um unico `stop_event` e compartilhado
 pelos listeners e pelo sniffer. Ao encerrar, mostra a situacao por IP e
 o resumo do relatorio.
-
-A captura de credenciais do Telnet (issue #7, PR #22) ainda nao esta
-ligada ao relatorio: isso entra quando o PR for integrado.
 """
 
 import sys
@@ -70,7 +68,11 @@ def main():
         # estouraria o limite de novo.
         contador.zerar(ip)
         tela.desbloqueio(ip, simulado)
-        tela.status(contador.invasores(), bloqueador.bloqueados())
+        # Sem a tabela de status aqui: o IP acabou de ser zerado, entao
+        # ela sairia dizendo "nenhum IP com tentativas" logo depois
+        # de todo mundo ter visto cinco tentativas e um bloqueio.
+        tela.info(f"contagem de {ip} zerada: sao precisas mais {limite} "
+                  f"tentativas para bloquear de novo")
 
     def ao_bloquear(ip, tentativas, simulado):
         tela.bloqueio(ip, tentativas, simulado)
@@ -94,6 +96,19 @@ def main():
         relatorio.registrar_evento(evento)
         contador.registrar(evento)
 
+    def ao_payload(evento):
+        # O mesmo texto que o listener recebeu pelo socket, agora lido
+        # dos bytes que passaram na rede: e assim que se mostra que o
+        # Telnet nao tem cifragem nenhuma.
+        tela.payload(evento.ip_origem, evento.porta_isca, evento.texto)
+
+    def ao_credencial(ip, porta_origem, porta_isca, usuario, senha):
+        # Elemento 4: a senha digitada na isca vai para a tela e para o
+        # relatorio, que e o que o professor pede ver no final.
+        tela.credencial(ip, porta_isca, usuario, senha)
+        relatorio.registrar_credencial(ip, porta_origem, porta_isca,
+                                       usuario, senha)
+
     aviso = aviso_de_privilegio()
     if aviso:
         for linha in aviso.splitlines():
@@ -116,6 +131,8 @@ def main():
     tela.info(f"Limite {limite} tentativas, bloqueio {modo}, "
               f"duracao {bloqueador.duracao_minutos} min")
 
+    tela.info("Ctrl+C para encerrar")
+
     stop_event = threading.Event()
     listeners = start_listeners(
         ports=portas,
@@ -123,10 +140,12 @@ def main():
         connection_timeout_seconds=honeypot.get("connection_timeout_seconds", 10),
         stop_event=stop_event,
         ao_erro=lambda porta, msg: tela.erro(f"listener da porta {porta}: {msg}"),
+        ao_subir=lambda porta, msg: tela.info(msg),
+        ao_credencial=ao_credencial,
     )
 
     sniffer = Sniffer(interface, portas, ao_evento=ao_evento,
-                      evento_parada=stop_event)
+                      evento_parada=stop_event, ao_payload=ao_payload)
     falha_sniffer = []
     thread_sniffer = threading.Thread(
         target=_rodar_sniffer,
@@ -135,7 +154,6 @@ def main():
         daemon=True,
     )
     thread_sniffer.start()
-    tela.info("Ctrl+C para encerrar")
 
     try:
         while not stop_event.is_set():
@@ -159,7 +177,10 @@ def main():
         return 1
 
     bloqueados = bloqueador.bloqueados()
-    print("\nSituacao final por IP:")
+    # Dois numeros diferentes para o mesmo IP, de proposito: o contador
+    # zera a cada desbloqueio, o relatorio nunca zera. Sem os rotulos
+    # parece defeito.
+    print("\nContagem atual por IP (zera a cada desbloqueio):")
     tela.status(contador.invasores(), bloqueados)
     print()
     print(relatorio.texto_resumo(bloqueados))
