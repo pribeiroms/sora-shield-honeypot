@@ -1,0 +1,8 @@
+# Normaliza terminadores de linha: LF no repositório e no disco de todos
+* text=auto eol=lf
+
+# Arquivos binários — o git não deve tentar converter nada
+*.pcap binary
+*.png binary
+*.jpg binary
+*.ico binary
